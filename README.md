@@ -246,8 +246,21 @@ The video includes:
 - **Outro card** — closing message
 - **Music** — if a track is resolved (per M3 rules), it's faded in/out and trimmed to the video length
 
-Formats: `reel` (1080×1920, 24fps) and `landscape` (1920×1080, 24fps). Output
-lands in `data/output/cli-<city>/<format>.mp4` by default.
+Formats: `reel` (1080×1920), `landscape` (1920×1080), `reel_4k` (2160×3840),
+`landscape_4k` (3840×2160). All at 24fps. Output lands in
+`data/output/cli-<city>/<format>.mp4` by default.
+
+#### Image quality & resolution (M9)
+
+- All images are resized with **LANCZOS** (high-quality) resampling.
+- A **minimum-resolution gate** rejects images smaller than 70% of the target —
+  they're never hard-upscaled. Instead, an automatic **blur-fill** background
+  (zoomed + gaussian blur) is generated, and the sharp (smaller) image is
+  overlaid centered. This looks premium and hides the resolution gap.
+- Unsplash is now queried at `raw` resolution (up to 3840px), not `regular`.
+- Card text is **supersampled at 2×** then downscaled for crisp edges.
+- The x264 encode uses **CRF 18** (visually lossless) by default. Tunable via
+  `EG_RENDER_CRF` in `.env` (lower = better quality, bigger file).
 
 #### Themes
 

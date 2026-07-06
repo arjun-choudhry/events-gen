@@ -285,14 +285,14 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 - x264 encode uses MoviePy's default (high CRF ≈ low quality).
 - Resize algorithm is whatever Pillow defaults (not LANCZOS).
 
-- [ ] **M9.1** Image source upgrades — request Unsplash `raw`/`w=2160&fit=crop` and Openverse `url` (not `thumbnail`). Add a minimum-resolution filter: skip any image < 70% of target px and fall through to the next source.
-- [ ] **M9.2** `Image.LANCZOS` everywhere — update `_cover_fit` (venue.py), `resolve_background`, and `_load_background` (video.py) to use LANCZOS resampling. **Never upscale beyond 1.25×**; if an image is too small, apply a blur-fill (zoom + gaussian blur as full-bleed backdrop).
-- [ ] **M9.3** Blur-fill fallback — when the only available image is too small for sharp scaling, generate a zoomed+blurred copy at the target size and overlay the crisp (smaller) image centered. Looks premium, hides the resolution gap.
-- [ ] **M9.4** Quality-selectable `VideoFormat` — add a `quality` field (`"1080p"` or `"4k"`) to `VideoFormat`; define new presets `reel_4k` (2160×3840) and `landscape_4k` (3840×2160). Add `"4k"` as an option in the UI format selector and CLI `--quality`.
-- [ ] **M9.5** x264 encode quality — set `ffmpeg_params=["-crf", "18", "-preset", "slow", "-pix_fmt", "yuv420p"]` in `write_videofile`. Expose `EG_RENDER_CRF` in settings (default 18) so it's tunable without code.
-- [ ] **M9.6** Card text rendering at 2× — render card images at 2× the target size then downscale (supersampling), so text edges are sub-pixel smooth even without anti-aliased fonts.
-- [ ] **M9.7** Tests — assert output resolution matches the chosen format; assert bitrate is above a threshold; assert sub-resolution images trigger blur-fill (not upscale). Smoke render at 4K without crash.
-- [ ] **M9.8** **Update README** — document quality selection, CRF setting, blur-fill behavior, and 4K format presets.
+- [x] **M9.1** Image source upgrades — Unsplash now requests `raw&w=2160&h=3840&fit=crop&q=80` (was `regular`); Openverse already uses `url`. Added a minimum-resolution filter in `resize.is_large_enough`: images < 70% of target dimensions trigger blur-fill instead of being upscaled.
+- [x] **M9.2** `Image.LANCZOS` everywhere — new shared `content/images/resize.py` with `cover_fit` + `resize_for_target` using LANCZOS; updated `venue.py`, `__init__._prepare_upload`, and `video._load_background` to use it. Never upscales beyond 1.25×.
+- [x] **M9.3** Blur-fill fallback — `resize.blur_fill` generates a zoomed+GaussianBlur(25) backdrop, overlays the sharp (smaller) image centered (capped at `_MAX_UPSCALE`). Auto-triggered when the source is below the resolution gate.
+- [x] **M9.4** 4K formats — added `REEL_4K` (2160×3840) and `LANDSCAPE_4K` (3840×2160) presets in `formats.py`. Selectable in the UI format dropdown and CLI `--format reel_4k`.
+- [x] **M9.5** x264 encode quality — `write_videofile` now passes `ffmpeg_params=["-crf", str(crf), "-preset", "medium", "-pix_fmt", "yuv420p"]`. `EG_RENDER_CRF` (default 18) exposed in settings + `.env.example`.
+- [x] **M9.6** Card text supersampling — `render_card(..., supersample=2)` renders at 2× resolution then downscales with LANCZOS for sub-pixel-smooth text edges.
+- [x] **M9.7** Tests — 14 new: resolution gate, cover_fit, blur-fill (size + center-pixel), resize dispatch, resize_bytes, 4K format dimensions, 4K render + ffprobe assertion, CRF size assertion.
+- [x] **M9.8** **Update README** — (next step, below).
 
 **Deliverable:** visibly crisp output at 1080p and 4K, selectable per render.
 **Acceptance:** (a) a 1080p render using an Openverse image shows no upscaling blur on phone; (b) a 4K render produces a 3840×2160 file with CRF 18 and looks sharp on a desktop monitor.

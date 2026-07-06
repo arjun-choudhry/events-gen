@@ -49,20 +49,25 @@ def render_card(
     *,
     theme: Theme | None = None,
     intensity: float | None = None,
+    supersample: int = 2,
 ) -> Image.Image:
     """Render a single event card as an RGBA Pillow image.
+
+    Cards are rendered at ``supersample``× resolution then downscaled with
+    LANCZOS for crisp, sub-pixel-smooth text edges.
 
     ``theme`` controls fonts/colors/scrim; ``intensity`` (0..1) overrides the
     theme's scrim opacity — higher makes the panel behind the text more opaque
     (more readable), lower lets more of the background show through.
     """
     theme = theme or get_theme(DEFAULT_THEME)
-    card_w = int(fmt.width * 0.85)
+    ss = max(1, supersample)
+    card_w = int(fmt.width * 0.85) * ss
     padding = int(card_w * 0.06)
 
-    title_size = max(28, int(fmt.width * 0.038))
-    detail_size = max(20, int(fmt.width * 0.026))
-    index_size = max(18, int(fmt.width * 0.022))
+    title_size = max(28, int(fmt.width * 0.038)) * ss
+    detail_size = max(20, int(fmt.width * 0.026)) * ss
+    index_size = max(18, int(fmt.width * 0.022)) * ss
 
     title_font = load_font(theme.title_fonts, title_size)
     detail_font = load_font(theme.body_fonts, detail_size)
@@ -124,6 +129,12 @@ def render_card(
         fill=scrim_fill,
     )
     card.paste(scratch.crop((0, 0, card_w, card_h)), (0, 0), scratch.crop((0, 0, card_w, card_h)))
+
+    # Downscale from supersample resolution to the actual target for crisp edges.
+    if ss > 1:
+        final_w = card_w // ss
+        final_h = card_h // ss
+        card = card.resize((final_w, final_h), Image.LANCZOS)
 
     return card
 

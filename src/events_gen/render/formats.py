@@ -28,10 +28,14 @@ class VideoFormat:
 
 REEL = VideoFormat(name="reel", width=1080, height=1920)
 LANDSCAPE = VideoFormat(name="landscape", width=1920, height=1080)
+REEL_4K = VideoFormat(name="reel_4k", width=2160, height=3840)
+LANDSCAPE_4K = VideoFormat(name="landscape_4k", width=3840, height=2160)
 
 FORMATS: dict[str, VideoFormat] = {
     "reel": REEL,
     "landscape": LANDSCAPE,
+    "reel_4k": REEL_4K,
+    "landscape_4k": LANDSCAPE_4K,
 }
 
 

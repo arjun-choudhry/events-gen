@@ -51,7 +51,10 @@ def _dim(img: Image.Image, amount: float) -> Image.Image:
 def _load_background(path: str | None, size: tuple[int, int], theme: Theme) -> np.ndarray:
     """Load + dim a background image to a numpy array at ``size``, or a solid fill."""
     if path and Path(path).exists():
-        img = Image.open(path).convert("RGB").resize(size)
+        from ..content.images.resize import resize_for_target
+
+        img = Image.open(path).convert("RGB")
+        img = resize_for_target(img, size[0], size[1])
         img = _dim(img, theme.background_dim)
     else:
         img = Image.new("RGB", size, theme.solid_background)
@@ -224,12 +227,16 @@ def render_video(
         )
         video = video.with_audio(audio)
 
+    from ..settings import get_settings as _get_settings
+
+    crf = _get_settings().render_crf
     out_path.parent.mkdir(parents=True, exist_ok=True)
     video.write_videofile(
         str(out_path),
         fps=fmt.fps,
         codec="libx264",
         audio_codec="aac",
+        ffmpeg_params=["-crf", str(crf), "-preset", "medium", "-pix_fmt", "yuv420p"],
         logger=None,
     )
     logger.info("wrote %s (%.1f MB)", out_path, out_path.stat().st_size / 1_048_576)

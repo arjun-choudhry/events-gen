@@ -37,18 +37,14 @@ def get_provider(settings: Settings | None = None) -> ImageProvider:
 
 
 def _prepare_upload(upload_path: Path, out_path: Path, size: tuple[int, int]) -> Path:
-    """Validate + resize a user-provided image to the target size (cover-fit)."""
+    """Validate + resize a user-provided image to the target size (LANCZOS)."""
+    from .resize import resize_for_target
+
     with Image.open(upload_path) as img:
         img = img.convert("RGB")
-        target_w, target_h = size
-        # Cover-fit: scale to fill, then center-crop.
-        scale = max(target_w / img.width, target_h / img.height)
-        resized = img.resize((round(img.width * scale), round(img.height * scale)))
-        left = (resized.width - target_w) // 2
-        top = (resized.height - target_h) // 2
-        cropped = resized.crop((left, top, left + target_w, top + target_h))
+        result = resize_for_target(img, size[0], size[1])
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        cropped.save(out_path)
+        result.save(out_path, quality=92)
     return out_path
 
 

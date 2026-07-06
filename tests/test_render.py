@@ -66,7 +66,7 @@ class TestFormats:
             get_format("square")
 
     def test_formats_registry(self) -> None:
-        assert set(FORMATS.keys()) == {"reel", "landscape"}
+        assert set(FORMATS.keys()) == {"reel", "landscape", "reel_4k", "landscape_4k"}
 
     def test_format_defaults(self) -> None:
         assert REEL.fps == 24

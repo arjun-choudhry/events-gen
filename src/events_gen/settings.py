@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     # Used for per-event venue/place backgrounds ("smart backgrounds").
     unsplash_access_key: str | None = Field(default=None, alias="UNSPLASH_ACCESS_KEY")
 
+    # ── Render quality ──
+    render_crf: int = Field(default=18, alias="EG_RENDER_CRF")
+
     # ── Music (auto-selection) ──
     # Jamendo — free client id from https://devportal.jamendo.com (no card).
     # Auto-picks popularity-ranked, royalty-free INSTRUMENTAL tracks. NOTE: this

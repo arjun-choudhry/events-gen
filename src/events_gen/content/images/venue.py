@@ -19,11 +19,9 @@ breaks.
 from __future__ import annotations
 
 import logging
-from io import BytesIO
 from pathlib import Path
 
 import httpx
-from PIL import Image
 
 from ...models import Event
 from ...settings import Settings, get_settings
@@ -35,19 +33,11 @@ _OPENVERSE_SEARCH = "https://api.openverse.org/v1/images/"
 _USER_AGENT = "events-gen/0.1 (https://github.com/; venue background lookup)"
 
 
-def _cover_fit(data: bytes, out_path: Path, size: tuple[int, int]) -> Path:
-    """Resize raw image bytes to ``size`` (cover-fit, center-crop) and save."""
-    with Image.open(BytesIO(data)) as img:
-        img = img.convert("RGB")
-        target_w, target_h = size
-        scale = max(target_w / img.width, target_h / img.height)
-        resized = img.resize((round(img.width * scale), round(img.height * scale)))
-        left = (resized.width - target_w) // 2
-        top = (resized.height - target_h) // 2
-        cropped = resized.crop((left, top, left + target_w, top + target_h))
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        cropped.save(out_path)
-    return out_path
+def _resize_to_target(data: bytes, out_path: Path, size: tuple[int, int]) -> Path:
+    """Resize raw image bytes to ``size`` using LANCZOS + blur-fill fallback."""
+    from .resize import resize_bytes
+
+    return resize_bytes(data, out_path, size)
 
 
 def _download(client: httpx.Client, url: str) -> bytes | None:
@@ -77,8 +67,14 @@ def _unsplash_url(client: httpx.Client, query: str, access_key: str) -> str | No
         if not results:
             logger.info("no Unsplash results for %r", query)
             return None
-        url: str = results[0]["urls"]["regular"]
-        return url
+        urls = results[0].get("urls", {})
+        # Prefer raw with explicit dimensions (sharp, large) over the limited 'regular'.
+        raw = urls.get("raw")
+        if raw:
+            url: str = f"{raw}&w=2160&h=3840&fit=crop&q=80"
+        else:
+            url = urls.get("full") or urls.get("regular", "")
+        return url or None
     except Exception:  # noqa: BLE001
         logger.warning("Unsplash search failed for %r", query, exc_info=True)
         return None
@@ -133,7 +129,7 @@ def resolve_event_background(
             data = _download(client, str(event.image_url))
             if data:
                 logger.info("using event promo image for %s", event.title)
-                return _cover_fit(data, out_path, size)
+                return _resize_to_target(data, out_path, size)
 
         # 2. Unsplash search (if a key is configured and its app is approved).
         if settings.unsplash_access_key:
@@ -142,7 +138,7 @@ def resolve_event_background(
                 data = _download(client, photo_url)
                 if data:
                     logger.info("using Unsplash background for %r", query)
-                    return _cover_fit(data, out_path, size)
+                    return _resize_to_target(data, out_path, size)
 
         # 3. Openverse fallback — keyless, so this works out of the box.
         photo_url = _openverse_url(client, query)
@@ -150,7 +146,7 @@ def resolve_event_background(
             data = _download(client, photo_url)
             if data:
                 logger.info("using Openverse background for %r", query)
-                return _cover_fit(data, out_path, size)
+                return _resize_to_target(data, out_path, size)
 
         return None
     finally:
