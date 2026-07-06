@@ -272,4 +272,43 @@ container from a **public video URL**, then publish it. So you need:
 Failure is isolated per destination: if one platform fails, the other still
 publishes and the draft is marked `failed` with the error recorded.
 
-<!-- M7: enable a schedule, trigger a run, inspect history -->
+### M7 — Automation & scheduling (optional, off by default)
+
+Schedules make the app run itself on a cadence per city. Nothing is scheduled
+until you create one — automation is opt-in.
+
+From the **Schedules** page in the UI: pick a city, cadence (weekly/monthly),
+window, event types, count, destinations, and whether to **auto-publish** or
+just generate a draft for review. Toggle **Enabled**, use **Run now** to trigger
+immediately, and watch results land in **History** (a run-log table of every
+job). Or manage schedules headlessly:
+
+```bash
+# Add a weekly, review-required schedule (generate only)
+python -m events_gen.cli schedule add new-york --cadence weekly --count 5
+
+# Add a monthly auto-publishing schedule
+python -m events_gen.cli schedule add tokyo --cadence monthly --auto-publish \
+    --targets youtube instagram
+
+python -m events_gen.cli schedule list          # see ids + state
+python -m events_gen.cli schedule run <id>      # trigger one immediately
+```
+
+- **Cadence:** weekly fires Monday 09:00, monthly fires the 1st at 09:00, in the
+  **city's timezone**.
+- **Review vs auto-publish:** with `auto_publish=false` (default) a run only
+  generates a draft you approve later; with `true` it publishes to the
+  schedule's destinations.
+- **Restart-safe:** enabled schedules live in the database; the scheduler
+  reconstructs its jobs from storage on start, so they survive restarts.
+- **Guardrails:** a run that finds no events is *skipped* (recorded, not failed);
+  any error is caught and recorded so one bad run never kills the scheduler.
+
+To run the scheduler in a long-lived process:
+
+```python
+from events_gen.scheduler import SchedulerService
+svc = SchedulerService()
+svc.start()   # reconstructs jobs from storage and begins firing
+```

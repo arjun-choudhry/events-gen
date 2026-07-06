@@ -198,6 +198,64 @@ def _cmd_publish(args: argparse.Namespace) -> int:
     return exit_code
 
 
+def _cmd_schedule(args: argparse.Namespace) -> int:
+    from .models import Platform, Schedule, ScheduleCadence
+    from .scheduler import run_schedule
+    from .settings import get_settings
+    from .storage import Storage
+
+    storage = Storage(get_settings().db_path)
+
+    if args.action == "list":
+        schedules = storage.list_schedules()
+        if not schedules:
+            print("no schedules configured")
+            return 0
+        for s in schedules:
+            state = "enabled" if s.enabled else "disabled"
+            pub = "auto-publish" if s.auto_publish else "review"
+            print(f"{s.id[:8]}  {s.city_slug:<14} {s.cadence.value:<8} {state:<9} {pub}")
+        return 0
+
+    if args.action == "add":
+        try:
+            get_city(args.city)
+        except RegistryError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        sched = storage.save_schedule(
+            Schedule(
+                city_slug=args.city,
+                cadence=ScheduleCadence(args.cadence),
+                window=TimeWindow(args.window),
+                event_types=args.types or [],
+                event_count=args.count,
+                targets=[Platform(t) for t in (args.targets or [])],
+                auto_publish=args.auto_publish,
+                enabled=True,
+            )
+        )
+        print(f"created schedule {sched.id[:8]} for {sched.city_slug} ({sched.cadence.value})")
+        return 0
+
+    if args.action == "run":
+        found = storage.get_schedule(args.id) if args.id else None
+        if found is None:
+            # allow matching by short id prefix
+            found = next(
+                (s for s in storage.list_schedules() if s.id.startswith(args.id or "")), None
+            )
+        if found is None:
+            print(f"error: no schedule matching {args.id!r}", file=sys.stderr)
+            return 1
+        print(f"running schedule {found.id[:8]} for {found.city_slug}…")
+        job = run_schedule(found, storage=storage)
+        print(f"  {job.status.value}: {job.detail or job.error}")
+        return 0 if job.status.value == "succeeded" else 1
+
+    return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="events-gen", description="Events-Gen registry CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -270,6 +328,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Actually publish (default is a dry-run that touches no accounts)",
     )
     pub.set_defaults(func=_cmd_publish)
+
+    sched = sub.add_parser("schedule", help="Manage automation schedules (M7)")
+    sched_sub = sched.add_subparsers(dest="action", required=True)
+
+    sched_sub.add_parser("list", help="List configured schedules").set_defaults(func=_cmd_schedule)
+
+    sadd = sched_sub.add_parser("add", help="Add a schedule for a city")
+    sadd.add_argument("city", help="City slug")
+    sadd.add_argument("--cadence", choices=["weekly", "monthly"], default="weekly")
+    sadd.add_argument("--window", choices=["week", "month"], default="week")
+    sadd.add_argument("--types", nargs="*", default=None, help="Event-type slugs (default: all)")
+    sadd.add_argument("--count", type=int, default=5)
+    sadd.add_argument("--targets", nargs="*", choices=["youtube", "instagram"], default=None)
+    sadd.add_argument(
+        "--auto-publish",
+        action="store_true",
+        help="Auto-publish (default: generate draft only, review required)",
+    )
+    sadd.set_defaults(func=_cmd_schedule)
+
+    srun = sched_sub.add_parser("run", help="Trigger a schedule immediately")
+    srun.add_argument("id", help="Schedule id (or unique prefix; see 'schedule list')")
+    srun.set_defaults(func=_cmd_schedule)
 
     return parser
 

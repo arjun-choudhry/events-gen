@@ -30,6 +30,8 @@ from events_gen.models import (
     EventType,
     Platform,
     PostDraft,
+    Schedule,
+    ScheduleCadence,
     TimeWindow,
 )
 from events_gen.registry import load_cities, load_event_types
@@ -306,18 +308,132 @@ def page_drafts() -> None:
 
 
 def page_history() -> None:
+    """R9/M7.4: publish results + a run log of every job (incl. scheduled runs)."""
     st.header("History")
     storage = _storage()
+
     published = storage.list_drafts(status=DraftStatus.PUBLISHED.value)
+    if published:
+        st.subheader("Published")
+        for draft in published:
+            st.write(f"**{draft.city_slug}** — {draft.content.title if draft.content else ''}")
+            for result in draft.results:
+                icon = "✅" if result.success else "❌"
+                st.write(f"  {icon} {result.platform.value}: {result.url or result.error}")
+
     jobs = storage.list_jobs()
-    if not published and not jobs:
-        st.info("No publish history yet — publishing lands in M6.")
+    st.subheader("Run log")
+    if not jobs:
+        st.info("No runs yet. Generate, publish, or trigger a schedule to populate this.")
         return
-    for draft in published:
-        st.write(f"**{draft.city_slug}** — {draft.content.title if draft.content else ''}")
-        for result in draft.results:
-            icon = "✅" if result.success else "❌"
-            st.write(f"  {icon} {result.platform.value}: {result.url or result.error}")
+    st.dataframe(
+        [
+            {
+                "when": (j.created_at.strftime("%Y-%m-%d %H:%M") if j.created_at else ""),
+                "kind": j.kind,
+                "status": j.status.value,
+                "detail": j.detail or j.error or "",
+            }
+            for j in jobs
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ── Schedules page (M7.3) ─────────────────────────────────────────────────
+
+
+def page_schedules() -> None:
+    st.header("Schedules")
+    st.caption("Automation is **off by default**. Enable a per-city cadence to auto-generate.")
+    storage = _storage()
+    cities = _cities()
+    types = _event_types()
+    city_by_slug = {c.slug: c for c in cities}
+
+    with st.expander("New schedule", expanded=not storage.list_schedules()):
+        city_slug = st.selectbox(
+            "City",
+            [c.slug for c in cities],
+            format_func=lambda s: city_by_slug[s].name,
+            key="sched_city",
+        )
+        cadence = st.radio(
+            "Cadence",
+            [ScheduleCadence.WEEKLY, ScheduleCadence.MONTHLY],
+            format_func=lambda c: c.value.capitalize(),
+            horizontal=True,
+            key="sched_cadence",
+        )
+        window = st.radio(
+            "Window",
+            [TimeWindow.WEEK, TimeWindow.MONTH],
+            format_func=lambda w: w.value.capitalize(),
+            horizontal=True,
+            key="sched_window",
+        )
+        sel_types = st.multiselect(
+            "Event types (empty = all)", [t.slug for t in types], key="sched_types"
+        )
+        count = st.slider("Number of events", 3, 15, 5, key="sched_count")
+        targets = st.multiselect(
+            "Destinations",
+            [Platform.YOUTUBE, Platform.INSTAGRAM],
+            format_func=lambda p: p.value.capitalize(),
+            key="sched_targets",
+        )
+        auto_publish = st.toggle(
+            "Auto-publish (otherwise: generate draft, review required)",
+            value=False,
+            key="sched_autopub",
+        )
+        if st.button("Create schedule", type="primary"):
+            storage.save_schedule(
+                Schedule(
+                    city_slug=city_slug,
+                    cadence=cadence,
+                    window=window,
+                    event_types=sel_types,
+                    event_count=count,
+                    targets=targets,
+                    auto_publish=auto_publish,
+                    enabled=True,
+                )
+            )
+            st.success("Schedule created.")
+            st.rerun()
+
+    schedules = storage.list_schedules()
+    if not schedules:
+        st.info("No schedules yet.")
+        return
+
+    st.subheader("Existing")
+    for sched in schedules:
+        name = city_by_slug.get(sched.city_slug)
+        title = name.name if name else sched.city_slug
+        pub = "auto-publish" if sched.auto_publish else "review required"
+        with st.expander(f"{title} · {sched.cadence.value} · {pub}"):
+            enabled = st.toggle("Enabled", value=sched.enabled, key=f"en_{sched.id}")
+            if enabled != sched.enabled:
+                sched.enabled = enabled
+                storage.save_schedule(sched)
+                st.rerun()
+            col1, col2 = st.columns(2)
+            if col1.button("Run now", key=f"runnow_{sched.id}"):
+                from events_gen.scheduler import run_schedule
+
+                with st.status("Running schedule…", expanded=True) as status:
+                    job = run_schedule(sched, storage=storage)
+                    status.write(job.detail or job.error or "done")
+                    status.update(
+                        label=f"Run {job.status.value}.",
+                        state="complete" if job.status.value == "succeeded" else "error",
+                    )
+            if col2.button("Delete", key=f"delsched_{sched.id}"):
+                storage.delete_schedule(sched.id)
+                st.rerun()
 
 
 # ── Settings page ────────────────────────────────────────────────────────
@@ -353,6 +469,7 @@ def page_settings() -> None:
 PAGES = {
     "Create": page_create,
     "Drafts": page_drafts,
+    "Schedules": page_schedules,
     "History": page_history,
     "Settings": page_settings,
 }
