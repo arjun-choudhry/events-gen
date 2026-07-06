@@ -116,14 +116,14 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M0 — Project scaffolding & foundations
 **Goal:** a runnable skeleton with config, models, and persistence — no external keys required.
 
-- [ ] **M0.1** Repo layout per §3; `pyproject.toml` with deps; `ruff` + `mypy` + `pytest` configured
-- [ ] **M0.2** `.env.example` enumerating every secret; `.gitignore` (env, db, cache, assets output)
-- [ ] **M0.3** `config/settings.py` (pydantic-settings) loading env + sane defaults
-- [ ] **M0.4** `config/cities.yaml` (seed 3–5 cities) + `config/event_types.yaml` (taxonomy + music map)
-- [ ] **M0.5** `models.py` — `Event`, `PostDraft`, `Job`, `Schedule` (typed)
-- [ ] **M0.6** `storage.py` — SQLite schema + CRUD for drafts/jobs/history/schedules
-- [ ] **M0.7** `README.md` skeleton + `make`/scripts for lint/test/run
-- [ ] **M0.8** **Update README** — document setup, layout, and how to run lint/test
+- [x] **M0.1** Repo layout per §3; `pyproject.toml` with deps; `ruff` + `mypy` + `pytest` configured
+- [x] **M0.2** `.env.example` enumerating every secret; `.gitignore` (env, db, cache, assets output)
+- [x] **M0.3** `src/events_gen/settings.py` (pydantic-settings) loading env + sane defaults
+- [x] **M0.4** `config/cities.yaml` (seed 5 cities) + `config/event_types.yaml` (taxonomy + music map)
+- [x] **M0.5** `models.py` — `Event`, `PostDraft`, `Job`, `Schedule` (typed)
+- [x] **M0.6** `storage.py` — SQLite schema + CRUD for drafts/jobs/history/schedules
+- [x] **M0.7** `README.md` skeleton + `scripts/` for lint/test/run + `scripts/smoke.py` (M0 runnable check)
+- [x] **M0.8** **Update README** — document setup, layout, how to run lint/test, and **how to run/try the M0 features** (see README "Trying it out per milestone")
 
 **Deliverable:** `pip install -e .` works; `pytest` green on model/storage tests.
 **Acceptance:** create → read → update a `PostDraft` in SQLite via `storage.py` in a test.
@@ -137,7 +137,7 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 - [ ] **M1.2** Event-type taxonomy loader + validation
 - [ ] **M1.3** Helper to add a new city (writes `cities.yaml` + asset folders)
 - [ ] **M1.4** Unit tests for loaders + add-city helper
-- [ ] **M1.5** **Update README** — document city/event-type config format + how to add a city
+- [ ] **M1.5** **Update README** — document city/event-type config format, how to add a city, and **runnable steps to try M1** (list cities/types, add a city)
 
 **Deliverable:** programmatic access to cities/types used by pipeline + UI.
 **Acceptance:** adding a city via helper makes it selectable everywhere without code changes.
@@ -156,7 +156,7 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 - [ ] **M2.7** Generic public-page **scraper** (`scraper.py`), robots.txt-aware, isolated/optional
 - [ ] **M2.8** Additional API sources (PredictHQ, SeatGeek, Meetup) — incremental
 - [ ] **M2.9** Tests: dedupe, ranking, window filter, source failure isolation
-- [ ] **M2.10** **Update README** — document event sources, required API keys, and caching
+- [ ] **M2.10** **Update README** — document event sources, required API keys, caching, and **runnable steps to try M2** (fetch events for a city from the CLI)
 
 **Deliverable:** `aggregator.fetch(city, window, types, count) -> list[Event]`.
 **Acceptance:** given a city, returns a deduped, ranked, correctly-sized list from ≥2 live sources; one source failing does not break the result.
@@ -173,7 +173,7 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 - [ ] **M3.5** Image override path — accept user upload, validate/resize
 - [ ] **M3.6** `music.py` — default track per event type + user upload override
 - [ ] **M3.7** Tests: caption schema/shape, provider selection, upload validation
-- [ ] **M3.8** **Update README** — document caption/image/music config + provider selection
+- [ ] **M3.8** **Update README** — document caption/image/music config, provider selection, and **runnable steps to try M3** (generate a content bundle with mock providers)
 
 **Deliverable:** for a set of events → `{title, caption, hashtags, background_image, music_track}`.
 **Acceptance:** pipeline produces valid content bundle with mock providers (no paid keys) and with real providers when keys present.
@@ -189,7 +189,7 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 - [ ] **M4.4** Duration/pacing logic scaled to number of events
 - [ ] **M4.5** Music mixing (fade in/out, trim to length)
 - [ ] **M4.6** Render smoke test (small clip) in CI
-- [ ] **M4.7** **Update README** — document FFmpeg dependency, formats, and render usage
+- [ ] **M4.7** **Update README** — document FFmpeg dependency, formats, render usage, and **runnable steps to try M4** (render a sample mp4 from the CLI)
 
 **Deliverable:** `render.video(content, events, fmt) -> path/to.mp4`.
 **Acceptance:** produces a playable mp4 in both aspect ratios with music and readable cards.
@@ -207,7 +207,7 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 - [ ] **M5.6** Destination selector: YouTube / Instagram / both (R8)
 - [ ] **M5.7** **City presets** save/load (R10)
 - [ ] **M5.8** Drafts list (saved `PostDraft`s) with re-open/edit/delete
-- [ ] **M5.9** **Update README** — document how to launch the UI and the operator workflow
+- [ ] **M5.9** **Update README** — document how to launch the UI, the operator workflow, and **runnable steps to try M5** (`./scripts/run.sh` → generate + preview a draft)
 
 **Deliverable:** end-to-end draft creation + preview from the browser.
 **Acceptance:** from a fresh start, user sets controls → generates → previews → saves a draft, all in UI.
@@ -225,7 +225,7 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 - [ ] **M6.6** Persist publish results + external post IDs to history
 - [ ] **M6.7** UI **Publish** buttons wired per destination with success/error surfacing
 - [ ] **M6.8** Tests/mocks for both publisher clients
-- [ ] **M6.9** **Update README** — document YouTube/Instagram credential setup + publish flow
+- [ ] **M6.9** **Update README** — document YouTube/Instagram credential setup, publish flow, and **runnable steps to try M6** (dry-run publish, then live publish a draft)
 
 **Deliverable:** one-click publish of a draft to selected destination(s).
 **Acceptance:** a draft publishes to YouTube (real/sandbox) and IG container flow completes; result + IDs stored and shown.
@@ -240,7 +240,7 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 - [ ] **M7.3** UI toggle per city/cadence + "review-required vs auto-publish" switch
 - [ ] **M7.4** Run history / logs view in UI
 - [ ] **M7.5** Guardrails: quota checks, skip if no events, notify on failure
-- [ ] **M7.6** **Update README** — document scheduler setup, job management, and guardrails
+- [ ] **M7.6** **Update README** — document scheduler setup, job management, guardrails, and **runnable steps to try M7** (enable a schedule, trigger a run, inspect history)
 
 **Deliverable:** enable a city schedule → auto-generates (and optionally auto-publishes).
 **Acceptance:** a scheduled job produces a draft (or publishes) at the configured time; visible in history.
@@ -256,7 +256,7 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 - [ ] **M8.4** Test coverage: aggregator, captions, render smoke, publisher mocks
 - [ ] **M8.5** `README.md` — full setup + **credential walkthrough** (per §6)
 - [ ] **M8.6** Sample `.env`, seed cities, and a demo dry-run mode
-- [ ] **M8.7** **Update README** — final pass: full credential walkthrough, quickstart, troubleshooting
+- [ ] **M8.7** **Update README** — final pass: full credential walkthrough, quickstart, troubleshooting, and a **consolidated "Trying it out per milestone" section** verified end-to-end
 
 **Deliverable:** a documented app another person could set up from README.
 **Acceptance:** clean checkout → follow README → produce and (dry-run) publish a post.
@@ -314,3 +314,6 @@ Critical path: **M0 → M2 → M3 → M4 → M5 → M6**. M1 parallels M2. M7 an
 ## Progress log
 
 - 2026-07-05 — Plan created; core decisions locked (§1). Restructured into milestones M0–M8 with sub-milestones, deliverables, and acceptance criteria.
+- 2026-07-05 — Added "Update README" as the final sub-milestone of every milestone.
+- 2026-07-05 — Each "Update README" step now also adds **runnable steps to try that milestone's feature**, collected in the README's "Trying it out per milestone" section.
+- 2026-07-05 — **M0 complete.** Repo scaffolding, `pyproject.toml` (ruff/mypy/pytest), `.env.example` + `.gitignore`, `settings.py`, `cities.yaml` + `event_types.yaml`, `models.py`, `storage.py` (SQLite), README, and scripts. 16 tests pass; ruff + mypy clean. Acceptance met: PostDraft create→read→update verified in SQLite.

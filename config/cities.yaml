@@ -1,0 +1,64 @@
+# City registry. Each entry drives event discovery, default assets, and UI selection.
+# Add a new city here (or via the M1 add-city helper) to make it selectable everywhere.
+#
+# Fields:
+#   slug            unique key (lowercase, kebab-case) — used for asset folders
+#   name            display name
+#   country         ISO 3166 country name
+#   country_code    ISO 3166-1 alpha-2
+#   timezone        IANA tz name (used for time-window calculations)
+#   latitude        decimal degrees (for radius-based source queries)
+#   longitude       decimal degrees
+#   default_image   optional path (relative to assets/) used when no upload/AI image
+#   default_music   optional path (relative to assets/) fallback track for the city
+
+cities:
+  - slug: new-york
+    name: New York
+    country: United States
+    country_code: US
+    timezone: America/New_York
+    latitude: 40.7128
+    longitude: -74.0060
+    default_image: images/new-york/default.jpg
+    default_music: null
+
+  - slug: london
+    name: London
+    country: United Kingdom
+    country_code: GB
+    timezone: Europe/London
+    latitude: 51.5074
+    longitude: -0.1278
+    default_image: images/london/default.jpg
+    default_music: null
+
+  - slug: tokyo
+    name: Tokyo
+    country: Japan
+    country_code: JP
+    timezone: Asia/Tokyo
+    latitude: 35.6762
+    longitude: 139.6503
+    default_image: images/tokyo/default.jpg
+    default_music: null
+
+  - slug: berlin
+    name: Berlin
+    country: Germany
+    country_code: DE
+    timezone: Europe/Berlin
+    latitude: 52.5200
+    longitude: 13.4050
+    default_image: images/berlin/default.jpg
+    default_music: null
+
+  - slug: mumbai
+    name: Mumbai
+    country: India
+    country_code: IN
+    timezone: Asia/Kolkata
+    latitude: 19.0760
+    longitude: 72.8777
+    default_image: images/mumbai/default.jpg
+    default_music: null

@@ -1,0 +1,73 @@
+# Event-type taxonomy. Drives UI filters, source category mapping, and default
+# music selection per type.
+#
+# Fields:
+#   slug            unique key (lowercase, kebab-case)
+#   name            display name
+#   default_music   path (relative to assets/) — fallback track when user picks none
+#   source_categories  per-source category hints used by the aggregator (M2)
+
+event_types:
+  - slug: music
+    name: Music & Concerts
+    default_music: music/music/default.mp3
+    source_categories:
+      ticketmaster: ["Music"]
+      eventbrite: ["103"]        # Music
+      predicthq: ["concerts"]
+
+  - slug: sports
+    name: Sports
+    default_music: music/sports/default.mp3
+    source_categories:
+      ticketmaster: ["Sports"]
+      eventbrite: ["108"]        # Sports & Fitness
+      predicthq: ["sports"]
+
+  - slug: arts
+    name: Arts & Theatre
+    default_music: music/arts/default.mp3
+    source_categories:
+      ticketmaster: ["Arts & Theatre"]
+      eventbrite: ["105"]        # Performing & Visual Arts
+      predicthq: ["performing-arts"]
+
+  - slug: food
+    name: Food & Drink
+    default_music: music/food/default.mp3
+    source_categories:
+      ticketmaster: []
+      eventbrite: ["110"]        # Food & Drink
+      predicthq: ["food-drink", "festivals"]
+
+  - slug: tech
+    name: Tech & Conferences
+    default_music: music/tech/default.mp3
+    source_categories:
+      ticketmaster: []
+      eventbrite: ["102"]        # Science & Technology
+      predicthq: ["conferences", "expos"]
+
+  - slug: nightlife
+    name: Nightlife
+    default_music: music/nightlife/default.mp3
+    source_categories:
+      ticketmaster: ["Music"]
+      eventbrite: ["103"]
+      predicthq: ["concerts"]
+
+  - slug: family
+    name: Family & Kids
+    default_music: music/family/default.mp3
+    source_categories:
+      ticketmaster: ["Family"]
+      eventbrite: ["115"]        # Family & Education
+      predicthq: ["community"]
+
+  - slug: festivals
+    name: Festivals
+    default_music: music/festivals/default.mp3
+    source_categories:
+      ticketmaster: ["Music"]
+      eventbrite: ["113"]        # Seasonal & Holiday
+      predicthq: ["festivals"]
