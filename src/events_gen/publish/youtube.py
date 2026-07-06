@@ -76,7 +76,10 @@ class YouTubePublisher(Publisher):
             },
             "status": {"privacyStatus": self.privacy_status},
         }
-        video_id = self._resumable_upload(service, video_path, body)
+        try:
+            video_id = self._resumable_upload(service, video_path, body)
+        except Exception as exc:  # map API failures to actionable messages (M8.3)
+            raise self._friendly_error(exc) from exc
         return PublishResult(
             platform=self.platform,
             success=True,
@@ -89,6 +92,7 @@ class YouTubePublisher(Publisher):
 
     def _build_service(self) -> Any:
         """Build an authorized YouTube API client, refreshing/creating the token."""
+        from google.auth.exceptions import RefreshError
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
@@ -99,18 +103,41 @@ class YouTubePublisher(Publisher):
         if token_file and token_file.exists():
             creds = Credentials.from_authorized_user_file(str(token_file), _SCOPES)
 
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        elif not creds or not creds.valid:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(self.settings.youtube_client_secrets_file), _SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-            if token_file:
-                token_file.parent.mkdir(parents=True, exist_ok=True)
-                token_file.write_text(creds.to_json())
+        try:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            elif not creds or not creds.valid:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    str(self.settings.youtube_client_secrets_file), _SCOPES
+                )
+                creds = flow.run_local_server(port=0)
+                if token_file:
+                    token_file.parent.mkdir(parents=True, exist_ok=True)
+                    token_file.write_text(creds.to_json())
+        except RefreshError as exc:
+            raise PublishError(
+                "YouTube token expired and could not be refreshed; delete "
+                f"{token_file} and re-run to re-authorize your channel"
+            ) from exc
 
         return build("youtube", "v3", credentials=creds)
+
+    @staticmethod
+    def _friendly_error(exc: Exception) -> PublishError:
+        """Map a Google API error to an actionable :class:`PublishError` (M8.3)."""
+        status = getattr(getattr(exc, "resp", None), "status", None)
+        if status == 403:
+            return PublishError(
+                "YouTube upload rejected (403): daily quota exceeded or the "
+                "channel lacks upload permission. Check your API quota in Google "
+                "Cloud Console, or try again tomorrow."
+            )
+        if status in (401, 400):
+            return PublishError(
+                "YouTube rejected the credentials (re-auth needed): delete the "
+                "token file and re-run to authorize."
+            )
+        return PublishError(f"YouTube upload failed: {exc}")
 
     def _resumable_upload(self, service: Any, video_path: str, body: dict[str, Any]) -> str:
         """Upload the video with a resumable request; return the new video id."""

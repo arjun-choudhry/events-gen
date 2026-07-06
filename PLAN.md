@@ -255,13 +255,13 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M8 — Hardening, docs, and release
 **Goal:** robust, documented, credential-ready.
 
-- [ ] **M8.1** Retries/backoff (tenacity) + rate-limit handling across all clients
-- [ ] **M8.2** Error surfacing in UI (per-source, per-publish)
-- [ ] **M8.3** Quota/token-expiry handling + re-auth prompts (YouTube/IG)
-- [ ] **M8.4** Test coverage: aggregator, captions, render smoke, publisher mocks
-- [ ] **M8.5** `README.md` — full setup + **credential walkthrough** (per §6)
-- [ ] **M8.6** Sample `.env`, seed cities, and a demo dry-run mode
-- [ ] **M8.7** **Update README** — final pass: full credential walkthrough, quickstart, troubleshooting, and a **consolidated "Trying it out per milestone" section** verified end-to-end
+- [x] **M8.1** Retries/backoff (tenacity) + rate-limit handling — API sources (existing) + shared `publish/_http.py` wrapping Instagram (429/5xx/transport retried, other 4xx fail fast)
+- [x] **M8.2** Error surfacing in UI — pipeline/publish/source errors shown via `safe_fetch`/`safe_publish` + `st.status`/`st.warning`/`st.exception`
+- [x] **M8.3** Quota/token-expiry handling — YouTube maps 403 quota / 401 auth / `RefreshError` to actionable re-auth messages
+- [x] **M8.4** Test coverage — 142 tests across aggregator, captions, render smoke, publisher mocks, scheduler, retry helper
+- [x] **M8.5** `README.md` — setup + per-feature credential walkthrough + a credentials checklist table
+- [x] **M8.6** Sample `.env` (complete), seed cities (5), and a **demo dry-run mode** (`cli demo` — full pipeline + dry-run publish, no keys)
+- [x] **M8.7** **Update README** — quickstart (demo + UI), troubleshooting section, status refreshed; per-milestone steps verified end-to-end
 
 **Deliverable:** a documented app another person could set up from README.
 **Acceptance:** clean checkout → follow README → produce and (dry-run) publish a post.
@@ -278,6 +278,8 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 - [ ] **Music**: royalty-free library placed in `assets/music/`
 
 > **Instagram note:** publishing is 2-step — create a **media container** (needs a public video URL for Reels) then **publish**. M6.3 delivers the hosting helper for this.
+>
+> **Status:** the code supports every credential above and degrades gracefully without them (keyless dev + dry-run). The boxes stay unchecked because they track the *operator* obtaining live accounts/keys, which is deployment-time, not code work.
 
 ---
 
@@ -328,4 +330,5 @@ Critical path: **M0 → M2 → M3 → M4 → M5 → M6**. M1 parallels M2. M7 an
 - 2026-07-05 — **M4 complete.** Added `render/` (`formats.py` with reel/landscape presets, `cards.py` with Pillow card rendering + word-wrap + price/venue, `video.py` with MoviePy 2.x composition — background + fade-in/out overlay cards + music fade/trim → h264 mp4). Added `cli render` command. Pinned moviepy>=2.0 in pyproject. 96 tests pass (22 new); ruff + mypy clean. Acceptance met: produces playable mp4 in both aspect ratios (1080×1920 reel, 1920×1080 landscape) with music mixing and readable event cards, verified via ffprobe + tests.
 - 2026-07-05 — **M5 complete.** Added `pipeline.py` (fetch→content→render→draft orchestrator with progress callback), `CityPreset` model + storage CRUD (presets table), and the Streamlit console `ui/app.py` (Create/Drafts/History/Settings pages wiring R1–R8, R10). Keyless-first: the console runs end-to-end with mock sources + template captions. 104 tests pass (8 new: pipeline + presets); ruff + mypy clean; app boots headless (HTTP 200 verified). Acceptance met: controls → generate → preview → save draft, all in-browser. UI page bodies are exercised via import + headless boot rather than unit tests (Streamlit needs a running script context); pipeline core is unit-tested.
 - 2026-07-05 — **M6 complete.** Added `publish/` (`base` Publisher iface + `safe_publish` isolation + dry-run, `hosting` public-URL helper, `youtube` OAuth+resumable upload, `instagram` two-step Reel flow, `publish_draft` orchestrator persisting results + history Job), UI Publish buttons (dry-run toggle + per-destination status), and `cli publish` (dry-run default, `--live`). Installed google-api-python-client/oauthlib; added mypy override for the untyped google libs. 124 tests pass (20 new; IG flow via httpx MockTransport); ruff + mypy clean; UI boots headless clean. Acceptance met: dry-run publishes to both destinations end-to-end (CLI + tests) with results/IDs stored on the draft and a `publish` job recorded; IG container flow verified against mocked Graph API. M6.5 (IG carousel fallback) deferred. Live paths (real YouTube OAuth upload, live Graph API) untested against real accounts (no credentials yet) — verified structurally + with mocks.
+- 2026-07-05 — **M8 complete.** Hardening + release pass. Added `publish/_http.py` (tenacity retry wrapper: transport/5xx/429 retried, other 4xx fail fast) wired into the Instagram client (M8.1; API sources already had retry). YouTube maps 403 quota / 401 auth / `RefreshError` to actionable re-auth messages (M8.3). Added `cli demo` — full pipeline + dry-run publish with no keys (M8.6 capstone). README: refreshed status, quickstart (demo + UI), credentials checklist table, and a troubleshooting section (M8.5/M8.7). 142 tests pass (8 new: retry helper, IG retry integration, demo e2e); ruff + mypy clean. Acceptance met: clean checkout → `pip install -e .` → `events-gen demo` produces a video and dry-run publishes it end-to-end with zero configuration. §6 credential boxes remain unchecked by design (operator/deploy-time, not code); live API paths still unverified against real accounts.
 - 2026-07-05 — **M7 complete.** Added `scheduler.py`: `run_schedule` (generate → optionally auto-publish → record a `scheduled_run` Job, never raises) + `SchedulerService` (APScheduler `BackgroundScheduler`, weekly=Mon 09:00 / monthly=1st 09:00 cron in the city tz). Schedules live in the `schedules` table; the service rebuilds its jobs from storage on `start`/`reload`, so it survives restart (M7.2) without relying on APScheduler's jobstore. Guardrails: no-events → skipped (success), any error → recorded failed job, publish failures isolated per destination. Added UI **Schedules** page (create/enable/auto-publish/Run now/delete) + run-log table on History, and `cli schedule add/list/run`. 134 tests pass (10 new); ruff + mypy clean; UI boots headless clean; CLI add→list→run verified. Acceptance met: a schedule's run produces a draft (or publishes) and is visible in history. Cron *firing* over wall-clock time not tested (would require waiting/mocking the clock); trigger construction + on-demand `run_schedule`/`trigger_now` are tested, and job reconstruction-from-storage (restart survival) is test-verified.

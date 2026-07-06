@@ -24,6 +24,7 @@ import httpx
 
 from ..models import Platform, PostDraft, PublishResult
 from ..settings import Settings, get_settings
+from ._http import request_with_retry
 from .base import Publisher, PublishError, _validate_publishable, build_description
 from .hosting import VideoHost
 
@@ -110,16 +111,17 @@ class InstagramPublisher(Publisher):
         return self.settings.instagram_access_token or ""
 
     def _create_container(self, client: httpx.Client, video_url: str, caption: str) -> str:
-        resp = client.post(
-            f"{_GRAPH}/{self._account}/media",
-            data={
-                "media_type": "REELS",
-                "video_url": video_url,
-                "caption": caption,
-                "access_token": self._token,
-            },
+        resp = request_with_retry(
+            lambda: client.post(
+                f"{_GRAPH}/{self._account}/media",
+                data={
+                    "media_type": "REELS",
+                    "video_url": video_url,
+                    "caption": caption,
+                    "access_token": self._token,
+                },
+            )
         )
-        resp.raise_for_status()
         container_id: str = resp.json()["id"]
         logger.info("created IG media container %s", container_id)
         return container_id
@@ -127,11 +129,12 @@ class InstagramPublisher(Publisher):
     def _await_container(self, client: httpx.Client, container_id: str) -> None:
         """Poll the container until it's FINISHED; raise on error/timeout."""
         for _ in range(self.max_polls):
-            resp = client.get(
-                f"{_GRAPH}/{container_id}",
-                params={"fields": "status_code", "access_token": self._token},
+            resp = request_with_retry(
+                lambda: client.get(
+                    f"{_GRAPH}/{container_id}",
+                    params={"fields": "status_code", "access_token": self._token},
+                )
             )
-            resp.raise_for_status()
             status = resp.json().get("status_code")
             if status == "FINISHED":
                 return
@@ -141,11 +144,12 @@ class InstagramPublisher(Publisher):
         raise PublishError("Instagram container did not finish in time")
 
     def _publish_container(self, client: httpx.Client, container_id: str) -> str:
-        resp = client.post(
-            f"{_GRAPH}/{self._account}/media_publish",
-            data={"creation_id": container_id, "access_token": self._token},
+        resp = request_with_retry(
+            lambda: client.post(
+                f"{_GRAPH}/{self._account}/media_publish",
+                data={"creation_id": container_id, "access_token": self._token},
+            )
         )
-        resp.raise_for_status()
         media_id: str = resp.json()["id"]
         logger.info("published IG media %s", media_id)
         return media_id

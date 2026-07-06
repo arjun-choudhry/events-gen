@@ -7,14 +7,16 @@ Driven from a **Streamlit** UI.
 
 See [`PLAN.md`](./PLAN.md) for the full milestone roadmap.
 
-> **Status:** M0 (scaffolding & foundations) complete. Config, domain models, and
-> SQLite persistence are in place; event sourcing, content generation, rendering,
-> UI, and publishing land in later milestones.
+> **Status:** M0–M7 complete; M8 (hardening & release) done. The full pipeline —
+> discover → caption → render → preview → publish, plus optional scheduling —
+> runs end-to-end. It works **keyless** in dev (mock event source, template
+> captions, placeholder background, dry-run publish); real API keys switch on
+> live sources and publishing.
 
 ## Requirements
 
 - Python 3.11+
-- [FFmpeg](https://ffmpeg.org/) on your `PATH` (used for video rendering in M4)
+- [FFmpeg](https://ffmpeg.org/) on your `PATH` (used for video rendering)
 
 ## Setup
 
@@ -35,6 +37,22 @@ Optional extras:
 
 - `pip install -e ".[publish]"` — YouTube/Instagram publishing clients (M6)
 - `pip install -e ".[scrape]"` — HTML scraping support (M2)
+
+## Quickstart
+
+Prove the whole pipeline works with **no keys and no config** — generate a video
+and dry-run publish it end-to-end:
+
+```bash
+python -m events_gen.cli demo
+# or: events-gen demo --count 5 --format landscape
+```
+
+Then launch the UI to drive it interactively:
+
+```bash
+./scripts/run.sh        # Streamlit console at http://localhost:8501
+```
 
 ## Configuration
 
@@ -312,3 +330,39 @@ from events_gen.scheduler import SchedulerService
 svc = SchedulerService()
 svc.start()   # reconstructs jobs from storage and begins firing
 ```
+
+## Credentials checklist
+
+Everything below is **optional** — the app runs keyless. Add each as you enable
+the matching feature (see the per-feature sections above for details):
+
+| Feature | Env var(s) | Where to get it |
+|---|---|---|
+| Captions (Claude) | `ANTHROPIC_API_KEY` | console.anthropic.com |
+| AI backgrounds | `EG_IMAGE_PROVIDER=ai`, `EG_IMAGE_API_KEY` | your chosen image provider |
+| Ticketmaster | `TICKETMASTER_API_KEY` | developer.ticketmaster.com |
+| Eventbrite | `EVENTBRITE_API_TOKEN` | eventbrite.com/platform/api |
+| YouTube | `YOUTUBE_CLIENT_SECRETS_FILE`, `YOUTUBE_TOKEN_FILE` | Google Cloud Console → YouTube Data API v3 → OAuth client |
+| Instagram | `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_BUSINESS_ACCOUNT_ID`, `EG_PUBLIC_VIDEO_BASE_URL` | Meta app + IG Business/Creator account + public host |
+
+## Troubleshooting
+
+- **`ffmpeg not found` / render fails** — install FFmpeg and ensure it's on your
+  `PATH` (`ffmpeg -version`). On macOS: `brew install ffmpeg`.
+- **No events found** — with no API keys the mock source always returns events;
+  if a live source is configured but returns nothing, widen the window
+  (`--window month`) or drop the `--types` filter. Scheduled runs *skip* (not
+  fail) when there are no events.
+- **YouTube "quota exceeded" (403)** — the Data API has a daily quota; each
+  upload is expensive. Wait for the quota to reset or request more in Cloud
+  Console.
+- **YouTube keeps opening a browser / "token expired"** — delete the token file
+  (`YOUTUBE_TOKEN_FILE`) and re-run to re-authorize the channel.
+- **Instagram "needs a public video URL"** — set `EG_PUBLIC_VIDEO_BASE_URL` to a
+  host that serves `data/output/` (S3, static host, or a tunnel like
+  cloudflared/ngrok). IG downloads the mp4 itself, so `localhost` won't work.
+- **Transient API blips** — HTTP calls to event APIs and Instagram retry
+  automatically with exponential backoff on network errors, 5xx, and 429
+  rate-limits; other 4xx (bad key/params) fail fast.
+- **Reset local state** — delete `data/events_gen.db` (drafts/jobs/schedules)
+  and `data/output/` (rendered videos); both are git-ignored and rebuilt.

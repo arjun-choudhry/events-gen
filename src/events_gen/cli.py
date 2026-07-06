@@ -198,6 +198,40 @@ def _cmd_publish(args: argparse.Namespace) -> int:
     return exit_code
 
 
+def _cmd_demo(args: argparse.Namespace) -> int:
+    """End-to-end smoke: generate a draft and dry-run publish it, no keys needed."""
+    from . import pipeline, publish
+    from .models import Platform
+
+    print("Events-Gen demo — full pipeline, no API keys required.\n")
+    try:
+        draft = pipeline.run(
+            city_slug=args.city,
+            window=TimeWindow(args.window),
+            count=args.count,
+            render_format=args.format,
+            targets=[Platform.YOUTUBE, Platform.INSTAGRAM],
+            progress=lambda m: print(f"  … {m}"),
+        )
+    except (RegistryError, pipeline.PipelineError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print("\nGenerated draft:")
+    print(f"  id:     {draft.id}")
+    print(f"  title:  {draft.content.title if draft.content else '(none)'}")
+    print(f"  events: {len(draft.events)}")
+    print(f"  video:  {draft.video_path}")
+
+    print("\nDry-run publish (no accounts touched):")
+    results = publish.publish_draft(draft, dry_run=True)
+    for r in results:
+        print(f"  ✅ {r.platform.value}: {r.url}")
+
+    print("\nDemo complete. Set API keys in .env to use live sources/publishing.")
+    return 0
+
+
 def _cmd_schedule(args: argparse.Namespace) -> int:
     from .models import Platform, Schedule, ScheduleCadence
     from .scheduler import run_schedule
@@ -328,6 +362,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Actually publish (default is a dry-run that touches no accounts)",
     )
     pub.set_defaults(func=_cmd_publish)
+
+    demo = sub.add_parser("demo", help="End-to-end demo: generate + dry-run publish (no keys)")
+    demo.add_argument("city", nargs="?", default="new-york", help="City slug (default: new-york)")
+    demo.add_argument("--window", choices=["week", "month"], default="week")
+    demo.add_argument("--count", type=int, default=3, help="Max events (default: 3)")
+    demo.add_argument("--format", choices=["reel", "landscape"], default="reel")
+    demo.set_defaults(func=_cmd_demo)
 
     sched = sub.add_parser("schedule", help="Manage automation schedules (M7)")
     sched_sub = sched.add_subparsers(dest="action", required=True)
