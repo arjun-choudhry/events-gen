@@ -249,6 +249,31 @@ The video includes:
 Formats: `reel` (1080×1920, 24fps) and `landscape` (1920×1080, 24fps). Output
 lands in `data/output/cli-<city>/<format>.mp4` by default.
 
+#### Themes
+
+A **theme** controls the video's look — fonts, color palette, and the
+**intensity** of the panel the text sits on — independently of the format.
+Pick one in the UI Create page (with an intensity slider), or from the CLI:
+
+```bash
+python -m events_gen.cli list-themes                     # see all themes
+python -m events_gen.cli render new-york --theme neon    # pick a theme
+python -m events_gen.cli render tokyo --theme minimal --intensity 0.25
+```
+
+Nine themes ship (`classic`, `midnight`, `sunset`, `neon`, `minimal`,
+`editorial`, `mono`, `bold`, `pastel`), each with distinct fonts, colors, and
+default panel intensity. `--intensity 0.0–1.0` overrides that panel opacity:
+higher = more opaque/readable, lower = more of the background image shows
+through. Programmatically: `render_video(..., theme="neon", intensity=0.3)` or
+`pipeline.run(..., theme="neon", intensity=0.3)`.
+
+Fonts are resolved from `assets/fonts/` first, then your OS's system fonts, by
+trying each theme's candidate list — so themes look their best where those
+fonts exist and **degrade gracefully** (to Pillow's default) where they don't.
+Drop `.ttf` files into `assets/fonts/` to guarantee a consistent look across
+machines.
+
 ### M5 — Streamlit operator console
 
 Launch the browser UI that wires every control to the pipeline:
@@ -267,7 +292,11 @@ Then, from the **Create** page:
 4. Click **Generate** — a progress panel shows fetch → captions → render, then
    the **preview** appears: an embedded video player plus editable
    title/caption/hashtags (R7). Click **Save edits** to persist changes.
-5. **Save as preset** stores the current controls for one-click reuse (R10).
+5. **Compare themes** — once the caption is finalized, click **Render theme
+   previews** to render one video *per theme* (reusing the same content/music, so
+   it's quick). They appear in a gallery; click **Use this theme** on the one you
+   like to make it the draft's final render before publishing.
+6. **Save as preset** stores the current controls for one-click reuse (R10).
 
 Other pages:
 - **Drafts** — every saved `PostDraft`: re-open, preview, edit caption, delete.

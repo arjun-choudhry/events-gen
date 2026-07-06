@@ -29,6 +29,7 @@ from PIL import Image
 from ..models import Event, PostContent
 from .cards import render_card
 from .formats import REEL, VideoFormat
+from .themes import DEFAULT_THEME, Theme, get_theme, load_font
 
 logger = logging.getLogger(__name__)
 
@@ -38,29 +39,38 @@ def _pillow_to_numpy(img: Image.Image) -> np.ndarray:
     return np.array(img.convert("RGB"))
 
 
-def _load_background(path: str | None, size: tuple[int, int]) -> np.ndarray:
-    """Load a background image to a numpy array at ``size``, or a solid fallback."""
+def _dim(img: Image.Image, amount: float) -> Image.Image:
+    """Darken an RGB image by ``amount`` (0..1) for text contrast."""
+    if amount <= 0:
+        return img
+    from PIL import ImageEnhance
+
+    return ImageEnhance.Brightness(img).enhance(max(0.0, 1.0 - amount))
+
+
+def _load_background(path: str | None, size: tuple[int, int], theme: Theme) -> np.ndarray:
+    """Load + dim a background image to a numpy array at ``size``, or a solid fill."""
     if path and Path(path).exists():
         img = Image.open(path).convert("RGB").resize(size)
+        img = _dim(img, theme.background_dim)
     else:
-        img = Image.new("RGB", size, (30, 30, 40))
+        img = Image.new("RGB", size, theme.solid_background)
     return _pillow_to_numpy(img)
 
 
-def _make_title_card(content: PostContent, fmt: VideoFormat) -> Image.Image:
-    """Render a title intro card (city name + post title)."""
-    from PIL import ImageDraw, ImageFont
+def _make_title_card(
+    content: PostContent, fmt: VideoFormat, theme: Theme, intensity: float | None
+) -> Image.Image:
+    """Render a title intro card (post title on a themed scrim)."""
+    from PIL import ImageDraw
 
     img = Image.new("RGBA", fmt.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
     title_size = max(36, int(fmt.width * 0.045))
-    try:
-        font = ImageFont.load_default(size=title_size)
-    except TypeError:
-        font = ImageFont.load_default()
+    font = load_font(theme.title_fonts, title_size)
 
-    text = content.title
+    text = content.title.upper() if theme.uppercase_titles else content.title
     bbox = draw.textbbox((0, 0), text, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     x = (fmt.width - tw) // 2
@@ -69,31 +79,30 @@ def _make_title_card(content: PostContent, fmt: VideoFormat) -> Image.Image:
     pad = int(title_size * 0.8)
     draw.rounded_rectangle(
         [(x - pad, y - pad), (x + tw + pad, y + th + pad)],
-        radius=int(pad * 0.4),
-        fill=(20, 20, 30, 210),
+        radius=int(pad * theme.card_radius_frac * 13),  # ~0.4 for the classic frac
+        fill=(*theme.card_color, theme.scaled_opacity(intensity)),
     )
-    draw.text((x, y), text, fill=(255, 255, 255, 255), font=font)
+    draw.text((x, y), text, fill=theme.title_color, font=font)
     return img
 
 
-def _make_outro_card(fmt: VideoFormat) -> Image.Image:
+def _make_outro_card(fmt: VideoFormat, theme: Theme) -> Image.Image:
     """Render a simple outro overlay."""
-    from PIL import ImageDraw, ImageFont
+    from PIL import ImageDraw
 
     img = Image.new("RGBA", fmt.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     size = max(28, int(fmt.width * 0.032))
-    try:
-        font = ImageFont.load_default(size=size)
-    except TypeError:
-        font = ImageFont.load_default()
+    font = load_font(theme.body_fonts, size)
 
     text = "See you at the next event!"
+    if theme.uppercase_titles:
+        text = text.upper()
     bbox = draw.textbbox((0, 0), text, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     x = (fmt.width - tw) // 2
     y = (fmt.height - th) // 2
-    draw.text((x, y), text, fill=(255, 255, 255, 230), font=font)
+    draw.text((x, y), text, fill=theme.text_color, font=font)
     return img
 
 
@@ -123,12 +132,18 @@ def render_video(
     out_path: Path,
     fmt: VideoFormat = REEL,
     *,
+    theme: Theme | str | None = None,
+    intensity: float | None = None,
     fade_duration: float = 0.4,
 ) -> Path:
     """Render the final slideshow video and write to ``out_path``.
 
-    Returns the output path on success.
+    ``theme`` selects the visual style (fonts/colors/scrim); pass a
+    :class:`Theme`, a theme name, or None for the default. ``intensity`` (0..1)
+    overrides the theme's scrim opacity — the "intensity of the background on
+    which the fonts are added". Returns the output path on success.
     """
+    resolved_theme = theme if isinstance(theme, Theme) else get_theme(theme or DEFAULT_THEME)
 
     n_events = len(events)
     intro_dur = fmt.intro_seconds
@@ -137,24 +152,25 @@ def render_video(
     total_dur = intro_dur + (card_dur * n_events) + outro_dur
 
     logger.info(
-        "rendering %s video: %d events, %.1fs total, %dx%d",
+        "rendering %s video: %d events, %.1fs total, %dx%d, theme=%s",
         fmt.name,
         n_events,
         total_dur,
         fmt.width,
         fmt.height,
+        resolved_theme.name,
     )
 
     # Base background clip spanning the whole video (used for intro/outro and as
     # the fallback for any event without a smart background).
-    base_bg_arr = _load_background(content.background_image_path, fmt.size)
+    base_bg_arr = _load_background(content.background_image_path, fmt.size, resolved_theme)
     layers: list[ImageClip] = [ImageClip(base_bg_arr).with_duration(total_dur)]
 
     # Per-event background segments (smart backgrounds), timed to each card.
     for i, event in enumerate(events):
         event_bg = content.event_backgrounds.get(event.id)
         if event_bg and Path(event_bg).exists():
-            seg_arr = _load_background(event_bg, fmt.size)
+            seg_arr = _load_background(event_bg, fmt.size, resolved_theme)
             start_t = intro_dur + i * card_dur
             layers.append(
                 ImageClip(seg_arr)
@@ -166,14 +182,16 @@ def render_video(
     overlays: list[ImageClip] = []
 
     # Title intro
-    title_img = _make_title_card(content, fmt)
+    title_img = _make_title_card(content, fmt, resolved_theme, intensity)
     overlays.append(
         _overlay_clip(title_img, fmt, start=0, duration=intro_dur, fade_duration=fade_duration)
     )
 
     # Event cards
     for i, event in enumerate(events):
-        card_img = render_card(event, fmt, index=i + 1, total=n_events)
+        card_img = render_card(
+            event, fmt, index=i + 1, total=n_events, theme=resolved_theme, intensity=intensity
+        )
         start_t = intro_dur + i * card_dur
         overlays.append(
             _overlay_clip(
@@ -182,7 +200,7 @@ def render_video(
         )
 
     # Outro
-    outro_img = _make_outro_card(fmt)
+    outro_img = _make_outro_card(fmt, resolved_theme)
     outro_start = intro_dur + n_events * card_dur
     overlays.append(
         _overlay_clip(

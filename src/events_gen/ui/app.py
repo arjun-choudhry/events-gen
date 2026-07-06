@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 
@@ -35,7 +36,7 @@ from events_gen.models import (
     TimeWindow,
 )
 from events_gen.registry import load_cities, load_event_types
-from events_gen.render import FORMATS
+from events_gen.render import DEFAULT_THEME, FORMATS, THEMES
 from events_gen.settings import get_settings
 from events_gen.storage import Storage
 
@@ -139,6 +140,31 @@ def page_create() -> None:
         format_func=lambda f: f"{f} ({FORMATS[f].width}×{FORMATS[f].height})",
     )
 
+    # Theme (fonts / colors / style) + scrim intensity
+    theme_names = list(THEMES.keys())
+    default_theme = defaults.get("theme", DEFAULT_THEME)
+    theme = st.selectbox(
+        "Theme",
+        theme_names,
+        index=theme_names.index(default_theme) if default_theme in theme_names else 0,
+        format_func=lambda t: f"{t} — {THEMES[t].description}",
+        help="Each theme sets its own fonts, colors, and default text-panel intensity.",
+    )
+    preset_intensity = defaults.get("intensity")
+    intensity = st.slider(
+        "Background panel intensity",
+        0.0,
+        1.0,
+        value=float(
+            preset_intensity if preset_intensity is not None else THEMES[theme].card_opacity / 255
+        ),
+        step=0.05,
+        help=(
+            "Opacity of the panel the text sits on. Higher = more opaque/readable; "
+            "lower = more of the background image shows through."
+        ),
+    )
+
     # R5/R6: asset overrides
     col1, col2 = st.columns(2)
     image_upload = col1.file_uploader(
@@ -186,9 +212,14 @@ def page_create() -> None:
         format_func=lambda p: p.value.capitalize(),
     )
 
-    col_gen, col_save = st.columns([1, 1])
-    generate = col_gen.button("Generate", type="primary")
-    with col_save.popover("Save as preset"):
+    col_gen, col_preview, col_save = st.columns([1, 1, 1])
+    generate = col_gen.button("Generate", type="primary", use_container_width=True)
+    preview_all = col_preview.button(
+        "Preview themes",
+        use_container_width=True,
+        help="Generate the post, then render a preview for every theme so you can compare them.",
+    )
+    with col_save.popover("Save as preset", use_container_width=True):
         preset_name = st.text_input("Preset name")
         if st.button("Save preset", disabled=not preset_name):
             storage.save_preset(
@@ -199,24 +230,29 @@ def page_create() -> None:
                     event_types=selected_types,
                     event_count=count,
                     render_format=fmt,
+                    theme=theme,
+                    intensity=intensity,
                     targets=targets,
                 )
             )
             st.success(f"Saved preset '{preset_name}'.")
 
-    if generate:
+    if generate or preview_all:
         _run_generation(
             city_slug=city_slug,
             window=window_val,
             event_types=selected_types,
             count=count,
             render_format=fmt,
+            theme=theme,
+            intensity=intensity,
             image_upload=_save_upload(image_upload, ".jpg"),
             music_upload=_save_upload(music_upload, ".mp3"),
             smart_backgrounds=smart_bg,
             smart_music=smart_music,
             auto_music=auto_music,
             targets=targets,
+            preview_all_themes=preview_all,
         )
 
     # Show the just-generated draft's preview inline.
@@ -235,11 +271,13 @@ def _apply_preset(preset: CityPreset) -> None:
         "event_types": preset.event_types,
         "event_count": preset.event_count,
         "render_format": preset.render_format,
+        "theme": preset.theme or DEFAULT_THEME,
+        "intensity": preset.intensity,
         "targets": preset.targets,
     }
 
 
-def _run_generation(**kwargs: object) -> None:
+def _run_generation(*, preview_all_themes: bool = False, **kwargs: object) -> None:
     status = st.status("Generating…", expanded=True)
 
     def progress(msg: str) -> None:
@@ -252,9 +290,17 @@ def _run_generation(**kwargs: object) -> None:
     except pipeline.PipelineError as exc:
         status.update(label="No events found.", state="error")
         st.warning(str(exc))
+        return
     except Exception as exc:  # surface unexpected failures in the UI
         status.update(label="Generation failed.", state="error")
         st.exception(exc)
+        return
+
+    if preview_all_themes:
+        # Stream a preview per theme, filling the grid live as each completes.
+        _run_theme_previews(draft, list(THEMES.keys()))
+    else:
+        st.rerun()
 
 
 def _render_preview(draft: PostDraft) -> None:
@@ -280,9 +326,104 @@ def _render_preview(draft: PostDraft) -> None:
             _storage().save_draft(draft)
             st.success("Caption saved.")
 
+    _render_theme_gallery(draft)
     _render_publish(draft)
 
     st.caption(f"Draft `{draft.id}` · {len(draft.events)} events · status: {draft.status.value}")
+
+
+# Number of theme previews shown per row (the page uses the wide layout).
+_GALLERY_COLS = 3
+
+
+def _render_theme_gallery(draft: PostDraft) -> None:
+    """Compare themes: render one preview per theme, then pick the final one.
+
+    Content is already finalized on the draft, so this only re-renders the look
+    (fonts/colors/scrim) per theme — captions/background/music are reused. Each
+    preview appears the moment its render finishes.
+    """
+    st.markdown("### Compare themes")
+    st.caption(
+        "Finalize your caption above first, then render a preview per theme and "
+        "pick the one you want to publish."
+    )
+    chosen_themes = st.multiselect(
+        "Themes to preview",
+        list(THEMES.keys()),
+        default=list(THEMES.keys()),
+        format_func=lambda t: f"{t} — {THEMES[t].description}",
+        key=f"gallery_themes_{draft.id}",
+    )
+    if st.button(
+        "Render theme previews", key=f"gallery_run_{draft.id}", disabled=not chosen_themes
+    ):
+        _run_theme_previews(draft, chosen_themes)
+        return  # _run_theme_previews reruns once done
+
+    if not draft.theme_previews:
+        return
+
+    st.write(f"Selected theme: **{draft.theme or '—'}**")
+    items = [(n, p) for n, p in draft.theme_previews.items() if Path(p).exists()]
+    for row_start in range(0, len(items), _GALLERY_COLS):
+        cols = st.columns(_GALLERY_COLS)
+        row = items[row_start : row_start + _GALLERY_COLS]
+        for col, (name, path) in zip(cols, row, strict=False):
+            with col:
+                _preview_cell(draft, name, path, interactive=True)
+
+
+def _preview_cell(draft: PostDraft, name: str, path: str, *, interactive: bool) -> None:
+    """Render one theme's video + a select button into the current container."""
+    is_selected = name == draft.theme
+    st.markdown(f"{'✅ ' if is_selected else ''}**{name}**")
+    st.video(path)
+    if not interactive:
+        return
+    if st.button(
+        "Use this theme" if not is_selected else "Selected",
+        key=f"pick_{name}_{draft.id}",
+        disabled=is_selected,
+        type="primary" if not is_selected else "secondary",
+        use_container_width=True,
+    ):
+        pipeline.select_theme(draft, name, storage=_storage())
+        st.rerun()
+
+
+def _run_theme_previews(draft: PostDraft, themes: list[str]) -> None:
+    """Render each theme one at a time, showing each preview as it completes."""
+    storage = _storage()
+    status = st.status(f"Rendering {len(themes)} theme preview(s)…", expanded=True)
+
+    # Pre-lay a grid of placeholders so each preview can appear in place, live.
+    st.write("Previews (appear as each finishes):")
+    slots: dict[str, Any] = {}
+    for row_start in range(0, len(themes), _GALLERY_COLS):
+        cols = st.columns(_GALLERY_COLS)
+        for col, name in zip(cols, themes[row_start : row_start + _GALLERY_COLS], strict=False):
+            with col:
+                st.markdown(f"**{name}**")
+                slots[name] = st.empty()
+                slots[name].info("⏳ rendering…")
+
+    try:
+        for name in themes:
+            status.write(f"Rendering '{name}'…")
+            # Render just this theme; the pipeline appends it and persists.
+            pipeline.render_theme_previews(draft, themes=[name], storage=storage)
+            path = draft.theme_previews.get(name)
+            if path and Path(path).exists():
+                slots[name].video(path)  # fill the placeholder immediately
+        status.update(label="Theme previews ready.", state="complete")
+        st.rerun()  # final rerun renders the interactive gallery with select buttons
+    except pipeline.PipelineError as exc:
+        status.update(label="Could not render previews.", state="error")
+        st.warning(str(exc))
+    except Exception as exc:  # surface unexpected render failures
+        status.update(label="Preview render failed.", state="error")
+        st.exception(exc)
 
 
 def _render_publish(draft: PostDraft) -> None:

@@ -27,6 +27,25 @@ _SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 _WATCH_URL = "https://www.youtube.com/watch?v={id}"
 
 
+def _extract_reason(exc: Exception) -> str | None:
+    """Pull the ``errors[0].reason`` out of a googleapiclient HttpError body."""
+    import json
+
+    content = getattr(exc, "content", None)
+    if content is None:
+        return None
+    try:
+        raw = content.decode() if isinstance(content, bytes) else str(content)
+        data = json.loads(raw)
+        errors = data.get("error", {}).get("errors", [])
+        if errors:
+            reason: str = errors[0].get("reason", "")
+            return reason or None
+    except (ValueError, AttributeError, KeyError, IndexError):
+        return None
+    return None
+
+
 class YouTubePublisher(Publisher):
     """Publishes a draft's video to YouTube."""
 
@@ -124,20 +143,44 @@ class YouTubePublisher(Publisher):
 
     @staticmethod
     def _friendly_error(exc: Exception) -> PublishError:
-        """Map a Google API error to an actionable :class:`PublishError` (M8.3)."""
+        """Map a Google API error to an actionable :class:`PublishError` (M8.3).
+
+        Extracts the machine-readable ``reason`` from the API response so the
+        message reflects the *actual* cause rather than guessing.
+        """
         status = getattr(getattr(exc, "resp", None), "status", None)
+        reason = _extract_reason(exc)
+
+        # YouTube-specific 403 reasons (the common first-upload failures).
+        known_403 = {
+            "youtubeSignupRequired": (
+                "the authorized Google account has no YouTube channel. Create a "
+                "channel at youtube.com (sign in → your avatar → 'Create a channel'), "
+                "then re-run. Make sure you authorize with that same account."
+            ),
+            "quotaExceeded": (
+                "daily API quota exceeded. YouTube uploads cost ~1600 quota units and "
+                "the default project quota is 10,000/day (~6 uploads). Wait for the "
+                "reset (midnight Pacific) or request more quota in Cloud Console."
+            ),
+            "forbidden": ("the channel lacks upload permission, or uploads are disabled for it."),
+            "accountSuspended": "the YouTube account is suspended.",
+            "accessNotConfigured": (
+                "the YouTube Data API v3 is not enabled for this Google Cloud project "
+                "(or was enabled moments ago and hasn't propagated). Enable it at "
+                "console.cloud.google.com → APIs & Services → Library → 'YouTube Data "
+                "API v3' → Enable, then wait a couple of minutes and retry."
+            ),
+        }
         if status == 403:
-            return PublishError(
-                "YouTube upload rejected (403): daily quota exceeded or the "
-                "channel lacks upload permission. Check your API quota in Google "
-                "Cloud Console, or try again tomorrow."
-            )
+            detail = known_403.get(reason or "", f"reason: {reason or 'unknown'}")
+            return PublishError(f"YouTube upload rejected (403): {detail}")
         if status in (401, 400):
             return PublishError(
                 "YouTube rejected the credentials (re-auth needed): delete the "
-                "token file and re-run to authorize."
+                f"token file and re-run to authorize. (reason: {reason or 'unknown'})"
             )
-        return PublishError(f"YouTube upload failed: {exc}")
+        return PublishError(f"YouTube upload failed ({status}, reason={reason}): {exc}")
 
     def _resumable_upload(self, service: Any, video_path: str, body: dict[str, Any]) -> str:
         """Upload the video with a resumable request; return the new video id."""

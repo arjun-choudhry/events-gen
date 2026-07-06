@@ -21,7 +21,7 @@ from pathlib import Path
 from .content.builder import build_content
 from .models import DraftStatus, Platform, PostDraft, TimeWindow
 from .registry import get_city, load_event_types
-from .render import get_format, render_video
+from .render import THEMES, get_format, render_video
 from .settings import Settings, get_settings
 from .sources import aggregator
 from .storage import Storage
@@ -48,6 +48,8 @@ def run(
     event_types: list[str] | None = None,
     count: int = 5,
     render_format: str = "reel",
+    theme: str | None = None,
+    intensity: float | None = None,
     image_upload: Path | None = None,
     music_upload: Path | None = None,
     smart_backgrounds: bool = False,
@@ -118,8 +120,9 @@ def run(
     fmt = get_format(render_format)
     progress(f"Rendering {fmt.name} video ({fmt.width}×{fmt.height})…")
     out_path = settings.output_dir / draft.id / f"{fmt.name}.mp4"
-    render_video(content, events, out_path, fmt)
+    render_video(content, events, out_path, fmt, theme=theme, intensity=intensity)
     draft.video_path = str(out_path)
+    draft.theme = theme
     draft.status = DraftStatus.READY
 
     # 4. Persist
@@ -127,3 +130,73 @@ def run(
     progress("Draft ready.")
     logger.info("pipeline produced draft %s (%s)", saved.id, saved.video_path)
     return saved
+
+
+def render_theme_previews(
+    draft: PostDraft,
+    *,
+    themes: list[str] | None = None,
+    render_format: str = "reel",
+    intensity: float | None = None,
+    storage: Storage | None = None,
+    settings: Settings | None = None,
+    progress: ProgressFn = _noop,
+) -> PostDraft:
+    """Render one preview video per theme for an already-finalized ``draft``.
+
+    Content (captions, background, music) is reused as-is — only the render
+    (fonts/colors/scrim) varies — so this is cheap and every preview shows the
+    same finalized content. Populates ``draft.theme_previews`` (theme → path) and
+    leaves the current selection (``draft.theme`` / ``draft.video_path``)
+    untouched unless it was empty, in which case the first theme becomes current.
+
+    Raises :class:`PipelineError` if the draft has no rendered content yet.
+    """
+    settings = settings or get_settings()
+    settings.ensure_dirs()
+    storage = storage or Storage(settings.db_path)
+
+    if draft.content is None:
+        raise PipelineError("draft has no content to preview; generate it first")
+
+    theme_names = themes if themes is not None else list(THEMES.keys())
+    fmt = get_format(render_format)
+    previews: dict[str, str] = dict(draft.theme_previews)
+
+    for name in theme_names:
+        progress(f"Rendering '{name}' preview…")
+        out_path = settings.output_dir / draft.id / "previews" / f"{name}.mp4"
+        render_video(draft.content, draft.events, out_path, fmt, theme=name, intensity=intensity)
+        previews[name] = str(out_path)
+
+    draft.theme_previews = previews
+    # If nothing is selected yet, default to the first rendered theme.
+    if draft.theme is None and theme_names:
+        draft.theme = theme_names[0]
+        draft.video_path = previews[theme_names[0]]
+
+    saved = storage.save_draft(draft)
+    progress(f"Rendered {len(theme_names)} theme preview(s).")
+    logger.info("rendered %d theme previews for draft %s", len(theme_names), saved.id)
+    return saved
+
+
+def select_theme(
+    draft: PostDraft,
+    theme: str,
+    *,
+    storage: Storage | None = None,
+    settings: Settings | None = None,
+) -> PostDraft:
+    """Choose ``theme`` as the draft's final render (its preview becomes current).
+
+    Raises :class:`PipelineError` if no preview exists for ``theme``.
+    """
+    settings = settings or get_settings()
+    storage = storage or Storage(settings.db_path)
+    path = draft.theme_previews.get(theme)
+    if path is None:
+        raise PipelineError(f"no preview rendered for theme {theme!r}")
+    draft.theme = theme
+    draft.video_path = path
+    return storage.save_draft(draft)

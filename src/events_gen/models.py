@@ -151,6 +151,10 @@ class PostDraft(BaseModel):
     events: list[Event] = Field(default_factory=list)
     content: PostContent | None = None
     video_path: str | None = None
+    # Theme name → rendered video path, when previews are generated per theme.
+    # ``theme`` is the currently-selected one (its path == ``video_path``).
+    theme_previews: dict[str, str] = Field(default_factory=dict)
+    theme: str | None = None
     targets: list[Platform] = Field(default_factory=list)
     status: DraftStatus = DraftStatus.DRAFT
     results: list[PublishResult] = Field(default_factory=list)
@@ -172,6 +176,8 @@ class CityPreset(BaseModel):
     event_types: list[str] = Field(default_factory=list)
     event_count: int = 5
     render_format: str = "reel"
+    theme: str | None = None
+    intensity: float | None = None
     background_path: str | None = None
     music_path: str | None = None
     targets: list[Platform] = Field(default_factory=list)

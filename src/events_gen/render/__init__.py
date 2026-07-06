@@ -5,6 +5,7 @@ Public API:
 """
 
 from .formats import FORMATS, LANDSCAPE, REEL, VideoFormat, get_format
+from .themes import DEFAULT_THEME, THEMES, Theme, get_theme
 from .video import render_video
 
 __all__ = [
@@ -13,5 +14,9 @@ __all__ = [
     "REEL",
     "VideoFormat",
     "get_format",
+    "THEMES",
+    "DEFAULT_THEME",
+    "Theme",
+    "get_theme",
     "render_video",
 ]

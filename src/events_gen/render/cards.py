@@ -2,7 +2,8 @@
 
 Each card is a rounded rectangle overlay showing the event title, date/time,
 venue, and (optionally) a price range. Cards are sized relative to the video
-format so they look good at both 9:16 and 16:9.
+format so they look good at both 9:16 and 16:9, and styled by a :class:`Theme`
+(fonts, colors, scrim intensity).
 """
 
 from __future__ import annotations
@@ -13,13 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..models import Event
 from .formats import VideoFormat
-
-
-def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    try:
-        return ImageFont.load_default(size=size)
-    except TypeError:
-        return ImageFont.load_default()
+from .themes import DEFAULT_THEME, Theme, get_theme, load_font
 
 
 def _wrap_text(
@@ -51,12 +46,17 @@ def render_card(
     fmt: VideoFormat,
     index: int,
     total: int,
+    *,
+    theme: Theme | None = None,
+    intensity: float | None = None,
 ) -> Image.Image:
     """Render a single event card as an RGBA Pillow image.
 
-    The card is sized to ~80% of the format width and scaled height, with a
-    semi-transparent dark background and white text.
+    ``theme`` controls fonts/colors/scrim; ``intensity`` (0..1) overrides the
+    theme's scrim opacity — higher makes the panel behind the text more opaque
+    (more readable), lower lets more of the background show through.
     """
+    theme = theme or get_theme(DEFAULT_THEME)
     card_w = int(fmt.width * 0.85)
     padding = int(card_w * 0.06)
 
@@ -64,9 +64,9 @@ def render_card(
     detail_size = max(20, int(fmt.width * 0.026))
     index_size = max(18, int(fmt.width * 0.022))
 
-    title_font = _load_font(title_size)
-    detail_font = _load_font(detail_size)
-    index_font = _load_font(index_size)
+    title_font = load_font(theme.title_fonts, title_size)
+    detail_font = load_font(theme.body_fonts, detail_size)
+    index_font = load_font(theme.body_fonts, index_size)
 
     scratch = Image.new("RGBA", (card_w, 1000), (0, 0, 0, 0))
     draw = ImageDraw.Draw(scratch)
@@ -76,21 +76,22 @@ def render_card(
 
     # Event number
     idx_text = f"{index}/{total}"
-    draw.text((padding, y), idx_text, fill=(200, 200, 200, 220), font=index_font)
+    draw.text((padding, y), idx_text, fill=theme.index_color, font=index_font)
     idx_bbox = draw.textbbox((0, 0), idx_text, font=index_font)
     y += (idx_bbox[3] - idx_bbox[1]) + int(padding * 0.4)
 
     # Title (wrapped)
-    title_lines = _wrap_text(event.title, title_font, text_area_w, draw)
+    title_text = event.title.upper() if theme.uppercase_titles else event.title
+    title_lines = _wrap_text(title_text, title_font, text_area_w, draw)
     for line in title_lines:
-        draw.text((padding, y), line, fill=(255, 255, 255, 255), font=title_font)
+        draw.text((padding, y), line, fill=theme.title_color, font=title_font)
         bbox = draw.textbbox((0, 0), line, font=title_font)
         y += (bbox[3] - bbox[1]) + 4
     y += int(padding * 0.5)
 
     # Date/time
     when = _format_datetime(event.start)
-    draw.text((padding, y), when, fill=(220, 220, 220, 240), font=detail_font)
+    draw.text((padding, y), when, fill=theme.text_color, font=detail_font)
     bbox = draw.textbbox((0, 0), when, font=detail_font)
     y += (bbox[3] - bbox[1]) + 6
 
@@ -98,7 +99,7 @@ def render_card(
     if event.venue:
         venue_lines = _wrap_text(event.venue, detail_font, text_area_w, draw)
         for line in venue_lines:
-            draw.text((padding, y), line, fill=(200, 200, 200, 230), font=detail_font)
+            draw.text((padding, y), line, fill=theme.text_color, font=detail_font)
             bbox = draw.textbbox((0, 0), line, font=detail_font)
             y += (bbox[3] - bbox[1]) + 4
         y += 4
@@ -106,7 +107,7 @@ def render_card(
     # Price
     if event.price_min is not None:
         price = _format_price(event)
-        draw.text((padding, y), price, fill=(180, 220, 180, 230), font=detail_font)
+        draw.text((padding, y), price, fill=theme.accent_color, font=detail_font)
         bbox = draw.textbbox((0, 0), price, font=detail_font)
         y += (bbox[3] - bbox[1]) + 4
 
@@ -115,11 +116,12 @@ def render_card(
 
     card = Image.new("RGBA", (card_w, card_h), (0, 0, 0, 0))
     card_draw = ImageDraw.Draw(card)
-    radius = int(card_w * 0.03)
+    radius = int(card_w * theme.card_radius_frac)
+    scrim_fill = (*theme.card_color, theme.scaled_opacity(intensity))
     card_draw.rounded_rectangle(
         [(0, 0), (card_w - 1, card_h - 1)],
         radius=radius,
-        fill=(20, 20, 30, 200),
+        fill=scrim_fill,
     )
     card.paste(scratch.crop((0, 0, card_w, card_h)), (0, 0), scratch.crop((0, 0, card_w, card_h)))
 

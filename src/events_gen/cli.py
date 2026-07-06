@@ -45,6 +45,17 @@ def _cmd_list_types(_: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_list_themes(_: argparse.Namespace) -> int:
+    from .render import THEMES
+
+    print(f"{'name':<12} intensity  description")
+    print("-" * 72)
+    for t in THEMES.values():
+        print(f"{t.name:<12} {t.card_opacity / 255:>6.2f}    {t.description}")
+    print(f"\n{len(THEMES)} themes")
+    return 0
+
+
 def _cmd_add_city(args: argparse.Namespace) -> int:
     try:
         city = add_city(
@@ -128,9 +139,12 @@ def _cmd_render(args: argparse.Namespace) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(
-        f"rendering {fmt.name} ({fmt.width}x{fmt.height}) for {city.name}, {len(events)} events..."
+        f"rendering {fmt.name} ({fmt.width}x{fmt.height}) theme={args.theme} "
+        f"for {city.name}, {len(events)} events..."
     )
-    result = render_video(content, events, out_path, fmt)
+    result = render_video(
+        content, events, out_path, fmt, theme=args.theme, intensity=args.intensity
+    )
     print(f"done: {result} ({result.stat().st_size / 1024:.0f} KB)")
     return 0
 
@@ -298,6 +312,7 @@ def build_parser() -> argparse.ArgumentParser:
         func=_cmd_list_cities
     )
     sub.add_parser("list-types", help="List all event types").set_defaults(func=_cmd_list_types)
+    sub.add_parser("list-themes", help="List all video themes").set_defaults(func=_cmd_list_themes)
 
     add = sub.add_parser("add-city", help="Add a new city to the registry")
     add.add_argument("--name", required=True)
@@ -337,6 +352,15 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["reel", "landscape"],
         default="reel",
         help="Video format (default: reel/9:16)",
+    )
+    rnd.add_argument(
+        "--theme", default=None, help="Visual theme (see list-themes; default: classic)"
+    )
+    rnd.add_argument(
+        "--intensity",
+        type=float,
+        default=None,
+        help="Text-panel opacity 0.0–1.0 (overrides the theme default)",
     )
     rnd.add_argument(
         "--output", "-o", default=None, help="Output path (default: data/output/<id>/)"
