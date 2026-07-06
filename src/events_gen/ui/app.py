@@ -37,6 +37,7 @@ from events_gen.models import (
 )
 from events_gen.registry import load_cities, load_event_types
 from events_gen.render import DEFAULT_THEME, FORMATS, THEMES
+from events_gen.render.animations import ANIMATIONS
 from events_gen.settings import get_settings
 from events_gen.storage import Storage
 
@@ -165,6 +166,16 @@ def page_create() -> None:
         ),
     )
 
+    # Animation preset (motion style)
+    anim_names = list(ANIMATIONS.keys())
+    animation = st.radio(
+        "Animation",
+        anim_names,
+        format_func=lambda a: f"{a} — {ANIMATIONS[a].description}",
+        horizontal=True,
+        help="Motion style: none (static), hype (fast zoom + slide), cinematic (subtle Ken Burns).",
+    )
+
     # R5/R6: asset overrides
     col1, col2 = st.columns(2)
     image_upload = col1.file_uploader(
@@ -252,6 +263,7 @@ def page_create() -> None:
         "render_format": fmt,
         "theme": theme,
         "intensity": intensity,
+        "animation": animation,
         "image_upload": _save_upload(image_upload, ".jpg"),
         "music_upload": _save_upload(music_upload, ".mp3"),
         "smart_backgrounds": smart_bg,

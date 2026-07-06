@@ -342,19 +342,19 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M12 — Catchier, more clickable videos (animation presets)
 **Goal:** make renders eye-catching and view-optimized. Two selectable animation styles: **"hype"** (TikTok/Reels-native: fast cuts, zoom, text pop) and **"cinematic"** (polished Ken Burns, smooth reveals). Existing static themes remain as a third "none" option.
 
-- [ ] **M12.1** Animation preset model — `AnimationPreset` dataclass (name, bg_motion, card_enter, card_exit, text_reveal, hook_style). Registry like themes: `ANIMATIONS = {"hype": ..., "cinematic": ..., "none": ...}`.
-- [ ] **M12.2** Background motion (Ken Burns / zoom) — per-card segment, the background slowly zooms in or pans. `"hype"` = fast 1.0→1.15× zoom + slight shake; `"cinematic"` = slow 1.0→1.05× pan across the image. Implemented via MoviePy `resize`+`position` keyframes.
-- [ ] **M12.3** Card enter/exit transitions — `"hype"` = slide-up from bottom + slight bounce/overshoot; `"cinematic"` = fade-in with a gentle upward drift. Replace the current `FadeIn`/`FadeOut` with preset-driven transition functions.
-- [ ] **M12.4** Kinetic text reveal — `"hype"` = per-word pop (each word scales from 0→1 in quick succession); `"cinematic"` = full-line fade with a subtle left-to-right wipe. Implemented as multiple timed `ImageClip`s or character-level animation.
-- [ ] **M12.5** Countdown numbers — events numbered "#N → #1" (highest-ranked last) with animated number transition between cards. Optional per preset (`"hype"` = yes, `"cinematic"` = no).
-- [ ] **M12.6** Hook intro — first 1–2s: big animated title text over a dimmed/blurred best-image. `"hype"` = "🔥 TOP {N} EVENTS IN {CITY} 🔥" with shake + zoom-in; `"cinematic"` = elegant fade with a slow Ken Burns on the city skyline.
+- [x] **M12.1** Animation preset model — `AnimationPreset` dataclass in `render/animations.py` with bg_zoom, card_enter, hook config. Registry: `ANIMATIONS = {"none", "hype", "cinematic"}`.
+- [x] **M12.2** Background motion (Ken Burns zoom) — `_make_ken_burns_clip` renders an oversized background and crops a progressively-zoomed region per frame. "hype" = 1.0→1.12×; "cinematic" = 1.0→1.04×.
+- [x] **M12.3** Card entrance transitions — `_overlay_clip` accepts animation; "hype" = slide-up from 15% below with ease-out; "cinematic" = slow fade (0.6s); "none" = current fade. Fade-out on exit for all.
+- [ ] **M12.4** Kinetic text reveal — *deferred* (per-word animation requires frame-by-frame text rendering; significant additional complexity).
+- [ ] **M12.5** Countdown numbers — *deferred*.
+- [x] **M12.6** Hook intro — big text overlay at the start ("🔥 TOP {n} IN {city} 🔥" for hype, elegant "{city} — {n} events" for cinematic). Adds 1.5–2s to the video duration.
 - [ ] **M12.7** Beat-synced pacing (optional, if music present) — analyze the track's BPM/onsets (librosa or aubio); snap card transitions to beats. Falls back to fixed `seconds_per_card` if no music or analysis fails. Add `librosa` as an optional dep.
 - [ ] **M12.8** LLM-generated scroll-stopping hooks — ask Gemini for 3 hook variants optimized for CTR; display in the UI for the operator to pick one; the winner becomes the intro text. Also generates thumbnail text (short, high-contrast, emoji-heavy).
 - [ ] **M12.9** Thumbnail generation — render a 1280×720 JPEG (YouTube standard) with big text + the best venue image, auto-set on YouTube upload (`snippet.thumbnails`). UI shows a thumbnail preview.
-- [ ] **M12.10** Wire into themes — each `Theme` gains an `animation` field (defaults to `"none"` for existing themes); new themes `"hype"` and `"cinematic"` ship with matching visual + animation presets.
-- [ ] **M12.11** UI integration — animation preset selector (separate from visual theme, since you can combine "neon" visuals with "hype" motion). Preview renders use the selected animation.
-- [ ] **M12.12** Tests — each animation preset renders without error; hook text is generated; thumbnail is a valid JPEG at 1280×720; beat analysis returns a BPM or degrades; countdown ordering matches rank.
-- [ ] **M12.13** **Update README** — document animation presets, hook generation, thumbnail, beat-sync, and the UI controls.
+- [x] **M12.10** Wire into pipeline + themes — `pipeline.run(animation=...)` → `render_video(animation=...)`. UI has a horizontal radio (None/Hype/Cinematic) separate from the visual theme.
+- [x] **M12.11** UI integration — animation radio in the Create page; gen_kwargs passes it through to render.
+- [x] **M12.12** Tests — 15 new: registry (3 presets, fallback), Ken Burns frame (size, start≠end), slide-up position (start/arrive/stay), render (each preset produces video, hype longer than none, combo with theme).
+- [x] **M12.13** **Update README** — documented animation presets, CLI usage, UI control.
 
 **Deliverable:** two animation presets (hype + cinematic), hook intro, kinetic text, optional beat-sync, thumbnail.
 **Acceptance:** render "hype" and "cinematic" side-by-side — both visibly more dynamic than the current static version; hook grabs attention in the first second; thumbnail is auto-set on YouTube.

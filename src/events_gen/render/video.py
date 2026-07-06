@@ -15,18 +15,28 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from moviepy import (
     AudioFileClip,
     CompositeVideoClip,
     ImageClip,
+    VideoClip,
 )
 from moviepy.audio.fx import AudioFadeIn, AudioFadeOut
 from moviepy.video.fx import FadeIn, FadeOut
 from PIL import Image
 
 from ..models import Event, PostContent
+from .animations import (
+    DEFAULT_ANIMATION,
+    AnimationPreset,
+    get_animation,
+    ken_burns_frame,
+    slide_left_position,
+    slide_up_position,
+)
 from .cards import render_card
 from .formats import REEL, VideoFormat
 from .themes import DEFAULT_THEME, Theme, get_theme, load_font
@@ -59,6 +69,52 @@ def _load_background(path: str | None, size: tuple[int, int], theme: Theme) -> n
     else:
         img = Image.new("RGB", size, theme.solid_background)
     return _pillow_to_numpy(img)
+
+
+def _make_ken_burns_clip(
+    bg_arr: np.ndarray,
+    fmt: VideoFormat,
+    duration: float,
+    zoom_start: float,
+    zoom_end: float,
+) -> VideoClip:
+    """Create a background clip with Ken Burns (slow zoom) motion."""
+    target_w, target_h = fmt.size
+    # Render the background at the max zoom scale so we can crop in.
+    max_zoom = max(zoom_start, zoom_end)
+    oversized_w = int(target_w * max_zoom)
+    oversized_h = int(target_h * max_zoom)
+    oversized = np.array(Image.fromarray(bg_arr).resize((oversized_w, oversized_h), Image.LANCZOS))
+
+    def make_frame(t: float) -> np.ndarray:
+        return ken_burns_frame(oversized, t, duration, target_w, target_h, zoom_start, zoom_end)
+
+    return VideoClip(make_frame, duration=duration).with_fps(fmt.fps)
+
+
+def _make_hook_card(text: str, fmt: VideoFormat, theme: Theme) -> Image.Image:
+    """Render a big scroll-stopping hook text overlay."""
+    from PIL import ImageDraw
+
+    img = Image.new("RGBA", fmt.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    size = max(48, int(fmt.width * 0.065))
+    font = load_font(theme.title_fonts, size)
+
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    x = (fmt.width - tw) // 2
+    y = (fmt.height - th) // 2
+
+    pad = int(size * 0.6)
+    draw.rounded_rectangle(
+        [(x - pad, y - pad), (x + tw + pad, y + th + pad)],
+        radius=int(pad * 0.5),
+        fill=(*theme.card_color, theme.card_opacity),
+    )
+    draw.text((x, y), text, fill=theme.title_color, font=font)
+    return img
 
 
 def _make_title_card(
@@ -115,17 +171,30 @@ def _overlay_clip(
     start: float,
     duration: float,
     fade_duration: float = 0.4,
+    animation: AnimationPreset | None = None,
 ) -> ImageClip:
     """Create a positioned MoviePy clip from a Pillow RGBA overlay."""
     arr = _pillow_to_numpy(overlay)
-    clip = (
-        ImageClip(arr)
-        .with_duration(duration)
-        .with_start(start)
-        .with_effects([FadeIn(fade_duration), FadeOut(fade_duration)])
-    )
+    clip = ImageClip(arr).with_duration(duration).with_start(start)
+
     ox = (fmt.width - overlay.width) // 2
     oy = (fmt.height - overlay.height) // 2
+
+    anim = animation or get_animation(DEFAULT_ANIMATION)
+    if anim.card_enter == "slide_up":
+        offset = int(fmt.height * 0.15)
+        clip = clip.with_effects([FadeOut(fade_duration)])
+        return clip.with_position(
+            slide_up_position(ox, oy, offset, anim.card_enter_duration, duration)
+        )
+    if anim.card_enter == "slide_left":
+        offset = int(fmt.width * 0.3)
+        clip = clip.with_effects([FadeOut(fade_duration)])
+        return clip.with_position(
+            slide_left_position(ox, oy, offset, anim.card_enter_duration, duration)
+        )
+    # Default: fade in + out, static position.
+    clip = clip.with_effects([FadeIn(fade_duration), FadeOut(fade_duration)])
     return clip.with_position((ox, oy))
 
 
@@ -137,44 +206,56 @@ def render_video(
     *,
     theme: Theme | str | None = None,
     intensity: float | None = None,
+    animation: AnimationPreset | str | None = None,
     fade_duration: float = 0.4,
 ) -> Path:
     """Render the final slideshow video and write to ``out_path``.
 
-    ``theme`` selects the visual style (fonts/colors/scrim); pass a
-    :class:`Theme`, a theme name, or None for the default. ``intensity`` (0..1)
-    overrides the theme's scrim opacity — the "intensity of the background on
-    which the fonts are added". Returns the output path on success.
+    ``theme`` selects the visual style (fonts/colors/scrim); ``animation``
+    selects the motion preset ("none" / "hype" / "cinematic"). ``intensity``
+    (0..1) overrides the theme's scrim opacity. Returns the output path.
     """
     resolved_theme = theme if isinstance(theme, Theme) else get_theme(theme or DEFAULT_THEME)
+    resolved_anim = (
+        animation if isinstance(animation, AnimationPreset) else get_animation(animation)
+    )
 
     n_events = len(events)
+    hook_dur = resolved_anim.hook_duration if resolved_anim.hook_enabled else 0.0
     intro_dur = fmt.intro_seconds
     card_dur = fmt.seconds_per_card
     outro_dur = fmt.outro_seconds
-    total_dur = intro_dur + (card_dur * n_events) + outro_dur
+    total_dur = hook_dur + intro_dur + (card_dur * n_events) + outro_dur
 
     logger.info(
-        "rendering %s video: %d events, %.1fs total, %dx%d, theme=%s",
+        "rendering %s video: %d events, %.1fs total, %dx%d, theme=%s, anim=%s",
         fmt.name,
         n_events,
         total_dur,
         fmt.width,
         fmt.height,
         resolved_theme.name,
+        resolved_anim.name,
     )
 
-    # Base background clip spanning the whole video (used for intro/outro and as
-    # the fallback for any event without a smart background).
+    # Base background clip — Ken Burns if animation has zoom, else static.
     base_bg_arr = _load_background(content.background_image_path, fmt.size, resolved_theme)
-    layers: list[ImageClip] = [ImageClip(base_bg_arr).with_duration(total_dur)]
+    if resolved_anim.bg_zoom_end != 1.0 or resolved_anim.bg_zoom_start != 1.0:
+        layers: list[ImageClip | Any] = [
+            _make_ken_burns_clip(
+                base_bg_arr, fmt, total_dur, resolved_anim.bg_zoom_start, resolved_anim.bg_zoom_end
+            )
+        ]
+    else:
+        layers = [ImageClip(base_bg_arr).with_duration(total_dur)]
 
     # Per-event background segments (smart backgrounds), timed to each card.
+    cards_start = hook_dur + intro_dur
     for i, event in enumerate(events):
         event_bg = content.event_backgrounds.get(event.id)
         if event_bg and Path(event_bg).exists():
             seg_arr = _load_background(event_bg, fmt.size, resolved_theme)
-            start_t = intro_dur + i * card_dur
+            start_t = cards_start + i * card_dur
             layers.append(
                 ImageClip(seg_arr)
                 .with_duration(card_dur)
@@ -184,10 +265,26 @@ def render_video(
 
     overlays: list[ImageClip] = []
 
+    # Hook intro (if animation enables it)
+    if resolved_anim.hook_enabled:
+        hook_text = resolved_anim.hook_text_template.format(
+            city=content.title.split(" in ")[-1] if " in " in content.title else "YOUR CITY",
+            n=n_events,
+        )
+        hook_img = _make_hook_card(hook_text, fmt, resolved_theme)
+        overlays.append(_overlay_clip(hook_img, fmt, start=0, duration=hook_dur, fade_duration=0.2))
+
     # Title intro
     title_img = _make_title_card(content, fmt, resolved_theme, intensity)
     overlays.append(
-        _overlay_clip(title_img, fmt, start=0, duration=intro_dur, fade_duration=fade_duration)
+        _overlay_clip(
+            title_img,
+            fmt,
+            start=hook_dur,
+            duration=intro_dur,
+            fade_duration=fade_duration,
+            animation=resolved_anim,
+        )
     )
 
     # Event cards
@@ -195,16 +292,21 @@ def render_video(
         card_img = render_card(
             event, fmt, index=i + 1, total=n_events, theme=resolved_theme, intensity=intensity
         )
-        start_t = intro_dur + i * card_dur
+        start_t = cards_start + i * card_dur
         overlays.append(
             _overlay_clip(
-                card_img, fmt, start=start_t, duration=card_dur, fade_duration=fade_duration
+                card_img,
+                fmt,
+                start=start_t,
+                duration=card_dur,
+                fade_duration=fade_duration,
+                animation=resolved_anim,
             )
         )
 
     # Outro
     outro_img = _make_outro_card(fmt, resolved_theme)
-    outro_start = intro_dur + n_events * card_dur
+    outro_start = cards_start + n_events * card_dur
     overlays.append(
         _overlay_clip(
             outro_img, fmt, start=outro_start, duration=outro_dur, fade_duration=fade_duration

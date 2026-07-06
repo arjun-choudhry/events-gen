@@ -287,6 +287,26 @@ fonts exist and **degrade gracefully** (to Pillow's default) where they don't.
 Drop `.ttf` files into `assets/fonts/` to guarantee a consistent look across
 machines.
 
+#### Animations (M12)
+
+Videos can have **motion** via animation presets — composable with any theme:
+
+| Preset | Look |
+|---|---|
+| `none` | Static background, fade in/out cards (current default) |
+| `hype` | Fast Ken Burns zoom (1→1.12×), slide-up card entrance, emoji hook intro |
+| `cinematic` | Subtle zoom (1→1.04×), slow fade entrance, elegant hook intro |
+
+```bash
+python -m events_gen.cli render new-york --animation hype
+python -m events_gen.cli render new-york --theme neon --animation cinematic
+```
+
+In the UI, select from the **Animation** radio (None / Hype / Cinematic) on the
+Create page. The hook intro adds 1.5–2s to the video with scroll-stopping text
+(e.g. "🔥 TOP 5 IN NYC 🔥"). Programmatically:
+`render_video(..., animation="hype")` or `pipeline.run(..., animation="hype")`.
+
 ### M5 — Streamlit operator console
 
 Launch the browser UI that wires every control to the pipeline:

@@ -50,6 +50,7 @@ def run(
     render_format: str = "reel",
     theme: str | None = None,
     intensity: float | None = None,
+    animation: str | None = None,
     image_upload: Path | None = None,
     music_upload: Path | None = None,
     smart_backgrounds: bool = False,
@@ -126,7 +127,9 @@ def run(
     fmt = get_format(render_format)
     progress(f"Rendering {fmt.name} video ({fmt.width}×{fmt.height})…")
     out_path = settings.output_dir / draft.id / f"{fmt.name}.mp4"
-    render_video(content, events, out_path, fmt, theme=theme, intensity=intensity)
+    render_video(
+        content, events, out_path, fmt, theme=theme, intensity=intensity, animation=animation
+    )
     draft.video_path = str(out_path)
     draft.theme = theme
     draft.status = DraftStatus.READY
