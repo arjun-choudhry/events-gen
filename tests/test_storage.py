@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from events_gen.models import (
+    CityPreset,
     DraftStatus,
     Job,
     JobStatus,
@@ -104,6 +105,36 @@ def test_schedule_roundtrip_and_enabled_filter(storage: Storage) -> None:
     )
     assert len(storage.list_schedules()) == 2
     assert len(storage.list_schedules(enabled_only=True)) == 1
+
+
+def test_preset_roundtrip_and_filter(storage: Storage) -> None:
+    p1 = storage.save_preset(
+        CityPreset(
+            name="NYC Weekly Music",
+            city_slug="new-york",
+            event_types=["music"],
+            event_count=8,
+            render_format="reel",
+            targets=[Platform.YOUTUBE],
+        )
+    )
+    storage.save_preset(CityPreset(name="Berlin Arts", city_slug="berlin"))
+
+    assert p1.created_at is not None
+    fetched = storage.get_preset(p1.id)
+    assert fetched is not None
+    assert fetched.event_count == 8
+    assert fetched.targets == [Platform.YOUTUBE]
+
+    assert len(storage.list_presets()) == 2
+    assert len(storage.list_presets(city_slug="new-york")) == 1
+
+
+def test_delete_preset(storage: Storage) -> None:
+    preset = storage.save_preset(CityPreset(name="Temp", city_slug="tokyo"))
+    assert storage.delete_preset(preset.id) is True
+    assert storage.get_preset(preset.id) is None
+    assert storage.delete_preset(preset.id) is False
 
 
 def test_persistence_across_instances(tmp_path: Path) -> None:

@@ -151,6 +151,27 @@ class PostDraft(BaseModel):
     updated_at: datetime | None = None
 
 
+class CityPreset(BaseModel):
+    """A saved set of Create-screen defaults for a city (R10).
+
+    Captures the controls an operator would otherwise re-pick each run: event
+    types, count, window, render format, chosen background/music, and targets.
+    """
+
+    id: str = Field(default_factory=_new_id)
+    name: str
+    city_slug: str
+    window: TimeWindow = TimeWindow.WEEK
+    event_types: list[str] = Field(default_factory=list)
+    event_count: int = 5
+    render_format: str = "reel"
+    background_path: str | None = None
+    music_path: str | None = None
+    targets: list[Platform] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class Job(BaseModel):
     """A unit of pipeline work (generation and/or publish), for tracking + history."""
 

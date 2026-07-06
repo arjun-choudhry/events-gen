@@ -201,15 +201,16 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M5 — Streamlit UI (control + preview + drafts)
 **Goal:** the operator console wiring all controls to the pipeline. *(R1–R8, R10)*
 
-- [ ] **M5.1** App shell + navigation (Create / Drafts / History / Settings)
-- [ ] **M5.2** Controls: city (R1), window (R2), event types (R3), count slider (R4)
-- [ ] **M5.3** Asset controls: background upload-or-default (R5), music upload-or-default (R6)
-- [ ] **M5.4** "Generate" → runs `pipeline.run`, shows progress
-- [ ] **M5.5** **Preview**: video player + editable caption/hashtags (R7)
-- [ ] **M5.6** Destination selector: YouTube / Instagram / both (R8)
-- [ ] **M5.7** **City presets** save/load (R10)
-- [ ] **M5.8** Drafts list (saved `PostDraft`s) with re-open/edit/delete
-- [ ] **M5.9** **Update README** — document how to launch the UI, the operator workflow, and **runnable steps to try M5** (`./scripts/run.sh` → generate + preview a draft)
+- [x] **M5.1** App shell + navigation (Create / Drafts / History / Settings) — `ui/app.py` sidebar
+- [x] **M5.2** Controls: city (R1), window (R2), event types (R3), count slider (R4)
+- [x] **M5.3** Asset controls: background upload-or-default (R5), music upload-or-default (R6)
+- [x] **M5.4** "Generate" → runs `pipeline.run`, shows progress (via `st.status` + progress callback)
+- [x] **M5.5** **Preview**: video player + editable caption/hashtags (R7)
+- [x] **M5.6** Destination selector: YouTube / Instagram / both (R8)
+- [x] **M5.7** **City presets** save/load (R10) — `CityPreset` model + storage CRUD + UI
+- [x] **M5.8** Drafts list (saved `PostDraft`s) with re-open/preview/edit/delete
+- [x] **M5.9** **Update README** — documented UI launch, operator workflow, and runnable M5 steps
+- [x] **Extra** `pipeline.py` — the fetch→content→render→draft orchestrator the UI (and later scheduler) call
 
 **Deliverable:** end-to-end draft creation + preview from the browser.
 **Acceptance:** from a fresh start, user sets controls → generates → previews → saves a draft, all in UI.
@@ -323,3 +324,4 @@ Critical path: **M0 → M2 → M3 → M4 → M5 → M6**. M1 parallels M2. M7 an
 - 2026-07-05 — **M3 complete.** Added `content/` (`captions` with Claude + template fallback, `images/` provider interface + mock + AI stub + `resolve_background`, `music.resolve_music`, `builder.build_content`) and `cli generate-content`. Keyless-first: template captions + Pillow placeholder background run with no API keys; Claude/AI activate when keys present. Added mypy overrides to skip 3.12-only third-party stubs (numpy/moviepy/PIL). 74 tests pass (16 new); ruff + mypy clean. Acceptance met: content bundle (title/caption/hashtags/background/music) produced with mock providers, verified via CLI + tests. Caption LLM path untested against live Claude API (no key yet) — verified structurally; `AIImageProvider.generate` intentionally unimplemented pending provider choice (PLAN §9).
 - 2026-07-05 — **M2 complete.** Added `timewindow.py`, `sources/` (`base` + `http_api` + `cache` + `ticketmaster` + `eventbrite` + `scraper` + `mock` + `aggregator`), and `cli fetch`. Sources gate on config and isolate failures via `safe_fetch`; aggregator dedupes (richest-wins), window-filters, ranks, returns top-N. 58 tests pass (30 new); ruff + mypy clean. Acceptance met: `fetch` returns a deduped/ranked/sized list; a failing source is isolated (test-verified). M2.8 (extra APIs) deferred as incremental. Note: real APIs untested against live endpoints (no keys yet) — parsing verified with mocked HTTP payloads.
 - 2026-07-05 — **M4 complete.** Added `render/` (`formats.py` with reel/landscape presets, `cards.py` with Pillow card rendering + word-wrap + price/venue, `video.py` with MoviePy 2.x composition — background + fade-in/out overlay cards + music fade/trim → h264 mp4). Added `cli render` command. Pinned moviepy>=2.0 in pyproject. 96 tests pass (22 new); ruff + mypy clean. Acceptance met: produces playable mp4 in both aspect ratios (1080×1920 reel, 1920×1080 landscape) with music mixing and readable event cards, verified via ffprobe + tests.
+- 2026-07-05 — **M5 complete.** Added `pipeline.py` (fetch→content→render→draft orchestrator with progress callback), `CityPreset` model + storage CRUD (presets table), and the Streamlit console `ui/app.py` (Create/Drafts/History/Settings pages wiring R1–R8, R10). Keyless-first: the console runs end-to-end with mock sources + template captions. 104 tests pass (8 new: pipeline + presets); ruff + mypy clean; app boots headless (HTTP 200 verified). Acceptance met: controls → generate → preview → save draft, all in-browser. UI page bodies are exercised via import + headless boot rather than unit tests (Streamlit needs a running script context); pipeline core is unit-tested.

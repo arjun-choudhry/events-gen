@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .models import Job, PostDraft, Schedule
+from .models import CityPreset, Job, PostDraft, Schedule
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS drafts (
@@ -51,6 +51,16 @@ CREATE TABLE IF NOT EXISTS schedules (
     payload     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_schedules_city ON schedules(city_slug);
+
+CREATE TABLE IF NOT EXISTS presets (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    city_slug   TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    payload     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_presets_city ON presets(city_slug);
 """
 
 
@@ -247,4 +257,53 @@ class Storage:
     def delete_schedule(self, schedule_id: str) -> bool:
         with self._connect() as conn:
             cur = conn.execute("DELETE FROM schedules WHERE id = ?", (schedule_id,))
+            return cur.rowcount > 0
+
+    # ── city presets (R10) ──
+    def save_preset(self, preset: CityPreset) -> CityPreset:
+        now = _utcnow()
+        if preset.created_at is None:
+            preset.created_at = now
+        preset.updated_at = now
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO presets (id, name, city_slug, created_at, updated_at, payload)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name,
+                    city_slug=excluded.city_slug,
+                    updated_at=excluded.updated_at,
+                    payload=excluded.payload
+                """,
+                (
+                    preset.id,
+                    preset.name,
+                    preset.city_slug,
+                    _iso(preset.created_at),
+                    _iso(preset.updated_at),
+                    preset.model_dump_json(),
+                ),
+            )
+        return preset
+
+    def get_preset(self, preset_id: str) -> CityPreset | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT payload FROM presets WHERE id = ?", (preset_id,)).fetchone()
+        return CityPreset.model_validate_json(row["payload"]) if row else None
+
+    def list_presets(self, *, city_slug: str | None = None) -> list[CityPreset]:
+        query = "SELECT payload FROM presets"
+        params: list[object] = []
+        if city_slug is not None:
+            query += " WHERE city_slug = ?"
+            params.append(city_slug)
+        query += " ORDER BY name ASC"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [CityPreset.model_validate_json(r["payload"]) for r in rows]
+
+    def delete_preset(self, preset_id: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM presets WHERE id = ?", (preset_id,))
             return cur.rowcount > 0

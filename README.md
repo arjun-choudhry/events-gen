@@ -198,6 +198,40 @@ The video includes:
 Formats: `reel` (1080×1920, 24fps) and `landscape` (1920×1080, 24fps). Output
 lands in `data/output/cli-<city>/<format>.mp4` by default.
 
-<!-- M5: ./scripts/run.sh  →  generate + preview a draft in the UI -->
+### M5 — Streamlit operator console
+
+Launch the browser UI that wires every control to the pipeline:
+
+```bash
+./scripts/run.sh          # or: streamlit run src/events_gen/ui/app.py
+```
+
+Then, from the **Create** page:
+
+1. Pick a **city** (R1), **time window** — week/month (R2), **event types** (R3),
+   and the **number of events** slider, 3–15 (R4).
+2. Optionally upload a **background image** (R5) or **music track** (R6) —
+   otherwise city/type defaults (or a generated placeholder) are used.
+3. Choose **destinations** — YouTube / Instagram / both (R8).
+4. Click **Generate** — a progress panel shows fetch → captions → render, then
+   the **preview** appears: an embedded video player plus editable
+   title/caption/hashtags (R7). Click **Save edits** to persist changes.
+5. **Save as preset** stores the current controls for one-click reuse (R10).
+
+Other pages:
+- **Drafts** — every saved `PostDraft`: re-open, preview, edit caption, delete.
+- **History** — published posts + external IDs (populated in M6).
+- **Settings** — resolved paths and which credentials are present.
+
+Everything runs **keyless** by default (mock event source, template captions,
+Pillow placeholder background), so the console works end-to-end with no API
+keys. Programmatically, the same flow is one call:
+
+```python
+from events_gen import pipeline
+draft = pipeline.run(city_slug="new-york", count=5, render_format="reel")
+print(draft.video_path)
+```
+
 <!-- M6: dry-run publish, then live publish a draft -->
 <!-- M7: enable a schedule, trigger a run, inspect history -->
