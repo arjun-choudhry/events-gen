@@ -15,7 +15,14 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from .registry import RegistryError, add_city, load_cities, load_event_types
+from .models import TimeWindow
+from .registry import (
+    RegistryError,
+    add_city,
+    get_city,
+    load_cities,
+    load_event_types,
+)
 
 
 def _cmd_list_cities(_: argparse.Namespace) -> int:
@@ -57,6 +64,108 @@ def _cmd_add_city(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_fetch(args: argparse.Namespace) -> int:
+    from .sources import aggregator
+    from .timewindow import compute_window
+
+    try:
+        city = get_city(args.city)
+    except RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    all_types = load_event_types()
+    if args.types:
+        wanted = set(args.types)
+        types = [t for t in all_types if t.slug in wanted]
+        unknown = wanted - {t.slug for t in types}
+        if unknown:
+            print(f"error: unknown event type(s): {', '.join(sorted(unknown))}", file=sys.stderr)
+            return 1
+    else:
+        types = []  # all types
+
+    window = compute_window(TimeWindow(args.window), city.timezone)
+    events = aggregator.fetch(city, window, types, count=args.count)
+
+    print(f"{city.name}: {args.window} window {window.start.date()} → {window.end.date()}")
+    print(f"{len(events)} event(s):\n")
+    for e in events:
+        when = e.start.strftime("%a %d %b %H:%M")
+        venue = f" @ {e.venue}" if e.venue else ""
+        print(f"  [{e.source}] {when}  {e.title}{venue}")
+    return 0
+
+
+def _cmd_render(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from .content.builder import build_content
+    from .render import get_format, render_video
+    from .sources import aggregator
+    from .timewindow import compute_window
+
+    try:
+        city = get_city(args.city)
+    except RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    all_types = load_event_types()
+    types = [t for t in all_types if t.slug in set(args.types)] if args.types else []
+
+    window = compute_window(TimeWindow(args.window), city.timezone)
+    events = aggregator.fetch(city, window, types, count=args.count)
+    if not events:
+        print("no events found", file=sys.stderr)
+        return 1
+
+    draft_id = f"cli-{city.slug}"
+    content = build_content(city, events, types or all_types, args.window, draft_id=draft_id)
+
+    fmt = get_format(args.format)
+    out_path = Path(args.output) if args.output else Path(f"data/output/{draft_id}/{fmt.name}.mp4")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(
+        f"rendering {fmt.name} ({fmt.width}x{fmt.height}) for {city.name}, {len(events)} events..."
+    )
+    result = render_video(content, events, out_path, fmt)
+    print(f"done: {result} ({result.stat().st_size / 1024:.0f} KB)")
+    return 0
+
+
+def _cmd_generate_content(args: argparse.Namespace) -> int:
+    from .content.builder import build_content
+    from .sources import aggregator
+    from .timewindow import compute_window
+
+    try:
+        city = get_city(args.city)
+    except RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    all_types = load_event_types()
+    types = [t for t in all_types if t.slug in set(args.types)] if args.types else []
+
+    window = compute_window(TimeWindow(args.window), city.timezone)
+    events = aggregator.fetch(city, window, types, count=args.count)
+    if not events:
+        print("no events found", file=sys.stderr)
+        return 1
+
+    content = build_content(
+        city, events, types or all_types, args.window, draft_id=f"cli-{city.slug}"
+    )
+    print(f"TITLE:    {content.title}\n")
+    print(content.caption)
+    print(f"\nHASHTAGS: {' '.join(content.hashtags)}")
+    print(f"\nBACKGROUND: {content.background_image_path}")
+    print(f"MUSIC:      {content.music_path or '(none — silent)'}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="events-gen", description="Events-Gen registry CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -75,6 +184,40 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--lon", type=float, required=True)
     add.add_argument("--slug", default=None, help="Optional; derived from name if omitted")
     add.set_defaults(func=_cmd_add_city)
+
+    fetch = sub.add_parser("fetch", help="Discover events for a city")
+    fetch.add_argument("city", help="City slug (see list-cities)")
+    fetch.add_argument(
+        "--window", choices=["week", "month"], default="week", help="Time window (default: week)"
+    )
+    fetch.add_argument(
+        "--types", nargs="*", default=None, help="Event-type slugs to filter (default: all)"
+    )
+    fetch.add_argument("--count", type=int, default=5, help="Max events (default: 5)")
+    fetch.set_defaults(func=_cmd_fetch)
+
+    gen = sub.add_parser("generate-content", help="Generate captions/image/music for a city")
+    gen.add_argument("city", help="City slug (see list-cities)")
+    gen.add_argument("--window", choices=["week", "month"], default="week")
+    gen.add_argument("--types", nargs="*", default=None, help="Event-type slugs (default: all)")
+    gen.add_argument("--count", type=int, default=5, help="Max events (default: 5)")
+    gen.set_defaults(func=_cmd_generate_content)
+
+    rnd = sub.add_parser("render", help="Render a video for a city's events")
+    rnd.add_argument("city", help="City slug (see list-cities)")
+    rnd.add_argument("--window", choices=["week", "month"], default="week")
+    rnd.add_argument("--types", nargs="*", default=None, help="Event-type slugs (default: all)")
+    rnd.add_argument("--count", type=int, default=5, help="Max events (default: 5)")
+    rnd.add_argument(
+        "--format",
+        choices=["reel", "landscape"],
+        default="reel",
+        help="Video format (default: reel/9:16)",
+    )
+    rnd.add_argument(
+        "--output", "-o", default=None, help="Output path (default: data/output/<id>/)"
+    )
+    rnd.set_defaults(func=_cmd_render)
 
     return parser
 

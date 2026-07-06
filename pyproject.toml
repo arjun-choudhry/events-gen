@@ -23,7 +23,7 @@ dependencies = [
     # llm
     "anthropic>=0.39",
     # media
-    "moviepy>=1.0.3",
+    "moviepy>=2.0",
     "Pillow>=10.2",
     # scheduling
     "APScheduler>=3.10",
@@ -71,6 +71,12 @@ strict = true
 warn_unused_ignores = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
+
+# Don't type-check into third-party packages (some ship 3.12-only stub syntax).
+[[tool.mypy.overrides]]
+module = ["numpy.*", "moviepy.*", "PIL.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

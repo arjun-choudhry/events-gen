@@ -147,16 +147,17 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M2 — Data sourcing (event discovery)
 **Goal:** fetch, normalize, dedupe, and rank events for a city/window/type. *(R2, R3, R4)*
 
-- [ ] **M2.1** `sources/base.py` — `EventSource` interface → `list[Event]`
-- [ ] **M2.2** First API source: **Ticketmaster** (auth, query by city+date+category, pagination)
-- [ ] **M2.3** Second API source: **Eventbrite**
-- [ ] **M2.4** Response **caching** layer (`data/cache/`) with TTL
-- [ ] **M2.5** `aggregator.py` — merge sources, **dedupe** (title+date+venue), **normalize**, **rank**, top-N
-- [ ] **M2.6** Time-window filter (this week / this month / custom)
-- [ ] **M2.7** Generic public-page **scraper** (`scraper.py`), robots.txt-aware, isolated/optional
-- [ ] **M2.8** Additional API sources (PredictHQ, SeatGeek, Meetup) — incremental
-- [ ] **M2.9** Tests: dedupe, ranking, window filter, source failure isolation
-- [ ] **M2.10** **Update README** — document event sources, required API keys, caching, and **runnable steps to try M2** (fetch events for a city from the CLI)
+- [x] **M2.1** `sources/base.py` — `EventSource` interface + `safe_fetch` (failure isolation) → `list[Event]`
+- [x] **M2.2** First API source: **Ticketmaster** (auth, geo+date+category query, pagination) — via shared `http_api.ApiEventSource`
+- [x] **M2.3** Second API source: **Eventbrite**
+- [x] **M2.4** Response **caching** layer (`sources/cache.py`, `data/cache/`) with TTL
+- [x] **M2.5** `aggregator.py` — merge sources, **dedupe** (richest-wins), window filter, **rank**, top-N
+- [x] **M2.6** Time-window helper (`timewindow.py`) — week/month/custom, tz-aware, anchored to now
+- [x] **M2.7** Generic public-page **scraper** (`scraper.py`), robots.txt-aware, JSON-LD, isolated/optional
+- [ ] **M2.8** Additional API sources (PredictHQ, SeatGeek, Meetup) — *deferred (incremental; interface + config hints ready)*
+- [x] **M2.9** Tests: dedupe, ranking, window filter, source failure isolation, parsing, cache (30 new tests)
+- [x] **M2.10** **Update README** — documented sources, keys, caching, sourcing model, and runnable `fetch` CLI steps
+- [x] **Extra** `MockSource` — deterministic keyless source so the pipeline runs end-to-end in dev/demo; `cli fetch` command
 
 **Deliverable:** `aggregator.fetch(city, window, types, count) -> list[Event]`.
 **Acceptance:** given a city, returns a deduped, ranked, correctly-sized list from ≥2 live sources; one source failing does not break the result.
@@ -166,14 +167,15 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M3 — Content generation
 **Goal:** produce captions, background images, and music selection for a post. *(R5, R6)*
 
-- [ ] **M3.1** `captions.py` (Claude) — title, caption, hashtags from selected events (prompt + schema)
-- [ ] **M3.2** `content/images/base.py` — `ImageProvider` interface
-- [ ] **M3.3** `mock_provider.py` — local placeholder image (dev, no keys)
-- [ ] **M3.4** `ai_provider.py` — AI image generation (config-selected provider)
-- [ ] **M3.5** Image override path — accept user upload, validate/resize
-- [ ] **M3.6** `music.py` — default track per event type + user upload override
-- [ ] **M3.7** Tests: caption schema/shape, provider selection, upload validation
-- [ ] **M3.8** **Update README** — document caption/image/music config, provider selection, and **runnable steps to try M3** (generate a content bundle with mock providers)
+- [x] **M3.1** `captions.py` (Claude via `messages.parse` + Pydantic schema) — title, caption, hashtags; deterministic template fallback when no key
+- [x] **M3.2** `content/images/base.py` — `ImageProvider` interface
+- [x] **M3.3** `mock_provider.py` — deterministic Pillow gradient placeholder (dev, no keys)
+- [x] **M3.4** `ai_provider.py` — config-selected AI provider stub (raises until an API is wired; factory falls back to mock)
+- [x] **M3.5** Image override path — `resolve_background` (upload → city default → generated), cover-fit resize
+- [x] **M3.6** `music.py` — `resolve_music` (upload → dominant-type default → city default → silent)
+- [x] **M3.7** Tests: captions, provider selection/fallback, upload validation, R5/R6 override rules, builder (16 new)
+- [x] **M3.8** **Update README** — documented caption/image/music config + provider selection + runnable `generate-content` steps
+- [x] **Extra** `builder.build_content` (assembles `PostContent`) + `cli generate-content` command
 
 **Deliverable:** for a set of events → `{title, caption, hashtags, background_image, music_track}`.
 **Acceptance:** pipeline produces valid content bundle with mock providers (no paid keys) and with real providers when keys present.
@@ -183,13 +185,13 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M4 — Video rendering
 **Goal:** compose the final video from content + events. *(R6, R7)*
 
-- [ ] **M4.1** `cards.py` (Pillow) — per-event card (name, date, venue, thumbnail)
-- [ ] **M4.2** `formats.py` — presets: 9:16 (Reel/Short), 16:9 (YouTube)
-- [ ] **M4.3** `video.py` (MoviePy/FFmpeg) — background + animated cards + music → mp4
-- [ ] **M4.4** Duration/pacing logic scaled to number of events
-- [ ] **M4.5** Music mixing (fade in/out, trim to length)
-- [ ] **M4.6** Render smoke test (small clip) in CI
-- [ ] **M4.7** **Update README** — document FFmpeg dependency, formats, render usage, and **runnable steps to try M4** (render a sample mp4 from the CLI)
+- [x] **M4.1** `cards.py` (Pillow) — per-event card (name, date, venue, price); word-wrap, format-relative sizing
+- [x] **M4.2** `formats.py` — presets: 9:16 `reel` (Reel/Short), 16:9 `landscape` (YouTube); configurable pacing
+- [x] **M4.3** `video.py` (MoviePy 2.x) — background + fade-in/out overlay cards + music → mp4
+- [x] **M4.4** Duration/pacing logic scaled to number of events (intro + N×seconds_per_card + outro)
+- [x] **M4.5** Music mixing (fade in/out via AudioFadeIn/Out, trim to video length)
+- [x] **M4.6** Render smoke tests (22 new tests): cards, formats, video output, music mux, pacing
+- [x] **M4.7** **Update README** — documented FFmpeg dependency, formats, render CLI, and runnable steps to try M4
 
 **Deliverable:** `render.video(content, events, fmt) -> path/to.mp4`.
 **Acceptance:** produces a playable mp4 in both aspect ratios with music and readable cards.
@@ -318,3 +320,6 @@ Critical path: **M0 → M2 → M3 → M4 → M5 → M6**. M1 parallels M2. M7 an
 - 2026-07-05 — Each "Update README" step now also adds **runnable steps to try that milestone's feature**, collected in the README's "Trying it out per milestone" section.
 - 2026-07-05 — **M0 complete.** Repo scaffolding, `pyproject.toml` (ruff/mypy/pytest), `.env.example` + `.gitignore`, `settings.py`, `cities.yaml` + `event_types.yaml`, `models.py`, `storage.py` (SQLite), README, and scripts. 16 tests pass; ruff + mypy clean. Acceptance met: PostDraft create→read→update verified in SQLite.
 - 2026-07-05 — **M1 complete.** Added `City`/`EventType` models, `registry.py` (loaders + validation + `add_city`), and `cli.py` (`list-cities`, `list-types`, `add-city`). Made `config_dir`/`assets_dir` overridable in settings for isolation. 30 tests pass (14 new); ruff + mypy clean. Acceptance met: added São Paulo via CLI → appears in `list-cities` with asset folder created, no code changes.
+- 2026-07-05 — **M3 complete.** Added `content/` (`captions` with Claude + template fallback, `images/` provider interface + mock + AI stub + `resolve_background`, `music.resolve_music`, `builder.build_content`) and `cli generate-content`. Keyless-first: template captions + Pillow placeholder background run with no API keys; Claude/AI activate when keys present. Added mypy overrides to skip 3.12-only third-party stubs (numpy/moviepy/PIL). 74 tests pass (16 new); ruff + mypy clean. Acceptance met: content bundle (title/caption/hashtags/background/music) produced with mock providers, verified via CLI + tests. Caption LLM path untested against live Claude API (no key yet) — verified structurally; `AIImageProvider.generate` intentionally unimplemented pending provider choice (PLAN §9).
+- 2026-07-05 — **M2 complete.** Added `timewindow.py`, `sources/` (`base` + `http_api` + `cache` + `ticketmaster` + `eventbrite` + `scraper` + `mock` + `aggregator`), and `cli fetch`. Sources gate on config and isolate failures via `safe_fetch`; aggregator dedupes (richest-wins), window-filters, ranks, returns top-N. 58 tests pass (30 new); ruff + mypy clean. Acceptance met: `fetch` returns a deduped/ranked/sized list; a failing source is isolated (test-verified). M2.8 (extra APIs) deferred as incremental. Note: real APIs untested against live endpoints (no keys yet) — parsing verified with mocked HTTP payloads.
+- 2026-07-05 — **M4 complete.** Added `render/` (`formats.py` with reel/landscape presets, `cards.py` with Pillow card rendering + word-wrap + price/venue, `video.py` with MoviePy 2.x composition — background + fade-in/out overlay cards + music fade/trim → h264 mp4). Added `cli render` command. Pinned moviepy>=2.0 in pyproject. 96 tests pass (22 new); ruff + mypy clean. Acceptance met: produces playable mp4 in both aspect ratios (1080×1920 reel, 1920×1080 landscape) with music mixing and readable event cards, verified via ffprobe + tests.

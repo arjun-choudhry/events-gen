@@ -127,9 +127,77 @@ python -m events_gen.cli list-cities   # Paris is listed
 After `pip install -e .`, the same CLI is available as the `events-gen` command
 (e.g. `events-gen list-cities`).
 
-<!-- M2: fetch events for a city from the CLI -->
-<!-- M3: generate a content bundle with mock providers -->
-<!-- M4: render a sample mp4 -->
+### M2 — data sourcing (event discovery)
+
+Fetch events for a city from the CLI. With **no API keys**, a deterministic
+`MockSource` supplies synthetic events so you can see the full flow; add keys to
+`.env` and real sources (Ticketmaster, Eventbrite) take over automatically.
+
+```bash
+# This week's events for Tokyo (mock data until keys are set)
+python -m events_gen.cli fetch tokyo --window week --count 5
+
+# This month, filtered to specific event types
+python -m events_gen.cli fetch london --window month --types music arts --count 8
+```
+
+**Sourcing model:** real API sources are used when their keys are present in
+`.env` (`TICKETMASTER_API_KEY`, `EVENTBRITE_API_TOKEN`, …); if none are
+configured the mock source is used so dev never dead-ends. Responses are cached
+under `data/cache/` (TTL) to avoid burning rate limits. A robots.txt-aware
+scraper source exists for public event pages that publish schema.org JSON-LD; it
+only activates for a city with a configured `scrape_url` and never touches
+login-gated sites.
+
+### M3 — content generation
+
+Generate the caption, background image, and music selection for a city's events
+— all with **no API keys** (template captions + a Pillow-generated placeholder
+background):
+
+```bash
+python -m events_gen.cli generate-content tokyo --window week --types music arts --count 4
+```
+
+This prints the title/caption/hashtags and writes a 1080×1920 background under
+`data/output/`. Content sources:
+
+- **Captions** — Anthropic Claude when `ANTHROPIC_API_KEY` is set (model via
+  `EG_CLAUDE_MODEL`, default `claude-sonnet-5`); otherwise a deterministic
+  template. Set the key in `.env` to get LLM copy.
+- **Background image** — resolved by priority: your uploaded image → the city's
+  default asset (`assets/images/<slug>/default.jpg`) → a generated image. The
+  generator is `EG_IMAGE_PROVIDER` (`mock` by default; `ai` uses
+  `EG_IMAGE_API_KEY` once an image API is wired in, falling back to `mock`).
+- **Music** — resolved by priority: your uploaded track → the default track for
+  the dominant event type (`assets/music/<type>/default.mp3`) → the city default
+  → none (silent). Default tracks are royalty-free files you add under `assets/`.
+
+### M4 — video rendering
+
+Render a slideshow mp4 from discovered events — background image + fading event
+cards + optional music. Requires **FFmpeg** on your `PATH` (brew/apt/choco).
+
+```bash
+# Render a 9:16 Reel/Short (default)
+python -m events_gen.cli render new-york --count 5
+
+# Render a 16:9 YouTube landscape video
+python -m events_gen.cli render tokyo --format landscape --window month --count 8
+
+# Specify an output path
+python -m events_gen.cli render london -o my_video.mp4
+```
+
+The video includes:
+- **Intro card** — post title (city + time window)
+- **Per-event cards** — title, date/time, venue, price range (4 seconds each by default)
+- **Outro card** — closing message
+- **Music** — if a track is resolved (per M3 rules), it's faded in/out and trimmed to the video length
+
+Formats: `reel` (1080×1920, 24fps) and `landscape` (1920×1080, 24fps). Output
+lands in `data/output/cli-<city>/<format>.mp4` by default.
+
 <!-- M5: ./scripts/run.sh  →  generate + preview a draft in the UI -->
 <!-- M6: dry-run publish, then live publish a draft -->
 <!-- M7: enable a schedule, trigger a run, inspect history -->
