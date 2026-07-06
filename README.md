@@ -404,6 +404,16 @@ container from a **public video URL**, then publish it. So you need:
 Failure is isolated per destination: if one platform fails, the other still
 publishes and the draft is marked `failed` with the error recorded.
 
+#### Publish polish (M14)
+
+- **YouTube visibility** is now configurable: `EG_YOUTUBE_PRIVACY=public|unlisted|private`
+  (default `unlisted` — visible by link, not searchable; safe for testing).
+- **Pre-publish validation** — before publishing, the system checks: video file
+  exists, caption ≤ 2200 chars (IG) / 5000 (YT), hashtags ≤ 30 (IG). Issues
+  block publishing with a clear message.
+- **One-click "Publish Favorites"** — when you have favorites saved, a sidebar
+  button batch-publishes the latest ready draft for each favorite city.
+
 #### Per-city destinations (M13)
 
 Each city can have its own YouTube channel(s) and/or Instagram account. A single

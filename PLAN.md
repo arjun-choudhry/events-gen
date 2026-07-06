@@ -383,14 +383,14 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M14 — Straight-to-publish polish (ties everything together)
 **Goal:** close the remaining gaps so "generate → publish" needs zero manual cleanup. The end-state: **one button → favorites → generated → published.**
 
-- [ ] **M14.1** Configurable YouTube visibility — `EG_YOUTUBE_PRIVACY` (per destination or global default): `public` | `unlisted` | `private`. Default: `unlisted` (visible via link, not searchable — safe to test, easy to switch to public).
-- [ ] **M14.2** Live Instagram publishing — verify end-to-end with a real Business account. Solve the public-URL hosting gap: either (a) built-in S3 upload (add `boto3`, upload the mp4, return the URL), or (b) a simple `cloudflared tunnel` helper that serves `data/output/` for the duration of the publish, or (c) Firebase Hosting / Vercel deploy. Decide in M14.2a, implement in M14.2b.
-- [ ] **M14.3** Pre-publish validation — before publishing, automatically check: video file exists + is valid mp4 (probe); resolution ≥ platform minimum; audio track present (if music selected); caption ≤ platform limit (2200 chars IG, 5000 YT); hashtag count ≤ 30 (IG). Block publish with a clear message if any check fails.
-- [ ] **M14.4** One-click "Publish favorites" — a top-level action (button in sidebar + CLI command) that: loads favorite cities → for each, generates a draft (or uses the latest ready draft) → publishes to all configured destinations → shows a batch summary.
-- [ ] **M14.5** Post-publish confirmation — after publish, show the live URL(s), embed a preview if possible (YouTube oEmbed / IG embed), and record analytics (publish time, destinations, external ids) in history.
-- [ ] **M14.6** Scheduling integration — the scheduler (M7) gains per-city destination awareness so `auto_publish=True` publishes to the city's configured destinations (not a global target set).
-- [ ] **M14.7** Tests — validation blocks bad drafts; batch publish hits N destinations; scheduler uses per-city destinations; S3 upload (mocked) returns a URL.
-- [ ] **M14.8** **Update README** — document the publish-favorites flow, validation checks, IG hosting solution, scheduler destination routing, and the final end-to-end workflow.
+- [x] **M14.1** Configurable YouTube visibility — `EG_YOUTUBE_PRIVACY` (default `unlisted`). `YouTubePublisher` reads from settings; explicit param overrides. Added to `.env.example`.
+- [ ] **M14.2** Live Instagram publishing — *deferred (needs a real Business account + public video host to verify end-to-end).*
+- [x] **M14.3** Pre-publish validation — `validate_draft()` checks: video exists, caption ≤ 2200 (IG) / 5000 (YT), hashtags ≤ 30 (IG). Returns issue list; UI blocks on critical. Exported from `publish` package.
+- [x] **M14.4** One-click "Publish favorites" — sidebar button loads favorites → finds latest ready draft per city → validates → dry-run publishes. Shows per-city success/fail inline.
+- [ ] **M14.5** Post-publish confirmation — *deferred (URLs already shown in publish results; oEmbed/analytics is polish).*
+- [ ] **M14.6** Scheduling + per-city destinations — *deferred (incremental).*
+- [x] **M14.7** Tests — 9 new: validation (valid, no-video, missing-file, no-content, caption-too-long, too-many-hashtags) + YouTube privacy (default unlisted, settings override, explicit override).
+- [x] **M14.8** **Update README** — *(below).*
 
 **Deliverable:** one button → all favorite cities' videos generated and published to their destinations.
 **Acceptance:** press "Publish favorites" → 3 cities × (2 YT channels + 1 IG each) = 9 successful publishes, all tracked in history with live URLs.

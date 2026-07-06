@@ -17,7 +17,7 @@ import logging
 from ..models import Destination, DraftStatus, Job, JobStatus, Platform, PostDraft, PublishResult
 from ..settings import Settings, get_settings
 from ..storage import Storage
-from .base import Publisher, PublishError
+from .base import Publisher, PublishError, validate_draft
 from .hosting import HostingError, VideoHost
 from .instagram import InstagramPublisher
 from .youtube import YouTubePublisher
@@ -33,6 +33,7 @@ __all__ = [
     "InstagramPublisher",
     "get_publisher",
     "publish_draft",
+    "validate_draft",
 ]
 
 

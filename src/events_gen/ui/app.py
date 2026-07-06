@@ -989,7 +989,40 @@ def main() -> None:
     st.sidebar.title("🎬 Events-Gen")
     choice = st.sidebar.radio("Navigate", list(PAGES.keys()))
     st.sidebar.caption("Discover city events → generate a video → publish.")
+
+    # One-click Publish Favorites (M14).
+    storage = _storage()
+    favorites = storage.list_favorites()
+    if favorites:
+        st.sidebar.divider()
+        if st.sidebar.button("Publish Favorites", use_container_width=True):
+            _publish_favorites(favorites, storage)
+
     PAGES[choice]()
+
+
+def _publish_favorites(favorites: list[str], storage: Storage) -> None:
+    """Batch dry-run publish the latest ready draft for each favorite city."""
+    from events_gen import publish
+    from events_gen.models import DraftStatus
+
+    st.sidebar.info(f"Publishing {len(favorites)} favorite(s)…")
+    for slug in favorites:
+        drafts = storage.list_drafts(city_slug=slug, status=DraftStatus.READY.value, limit=1)
+        if not drafts:
+            st.sidebar.warning(f"{slug}: no ready draft — generate one first.")
+            continue
+        draft = drafts[0]
+        issues = publish.validate_draft(draft)
+        if any("missing" in i.lower() or "no rendered" in i.lower() for i in issues):
+            st.sidebar.warning(f"{slug}: {issues[0]}")
+            continue
+        results = publish.publish_draft(draft, dry_run=True, storage=storage)
+        for r in results:
+            if r.success:
+                st.sidebar.success(f"{slug} → {r.platform.value}: {r.url}")
+            else:
+                st.sidebar.error(f"{slug} → {r.platform.value}: {r.error}")
 
 
 if __name__ == "__main__":

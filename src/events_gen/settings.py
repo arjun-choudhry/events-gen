@@ -92,6 +92,7 @@ class Settings(BaseSettings):
         default=None, alias="YOUTUBE_CLIENT_SECRETS_FILE"
     )
     youtube_token_file: Path | None = Field(default=None, alias="YOUTUBE_TOKEN_FILE")
+    youtube_privacy: str = Field(default="unlisted", alias="EG_YOUTUBE_PRIVACY")
 
     # ── Instagram ──
     instagram_access_token: str | None = Field(default=None, alias="INSTAGRAM_ACCESS_TOKEN")

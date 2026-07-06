@@ -57,11 +57,11 @@ class YouTubePublisher(Publisher):
         *,
         destination: Destination | None = None,
         settings: Settings | None = None,
-        privacy_status: str = "private",
+        privacy_status: str | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.destination = destination
-        self.privacy_status = privacy_status
+        self.privacy_status = privacy_status or self.settings.youtube_privacy
         # Per-destination credentials override global settings.
         if destination and destination.youtube_client_secrets_path:
             from ..settings import REPO_ROOT

@@ -63,6 +63,33 @@ def _validate_publishable(draft: PostDraft) -> str:
     return draft.video_path
 
 
+def validate_draft(draft: PostDraft) -> list[str]:
+    """Pre-publish validation: return a list of issues (empty = OK to publish).
+
+    Checks video presence, caption length limits, and hashtag counts. Critical
+    issues (no video) should block publishing; warnings (long caption) can be
+    shown but not blocking.
+    """
+    from pathlib import Path
+
+    issues: list[str] = []
+    if not draft.video_path:
+        issues.append("No rendered video on this draft.")
+    elif not Path(draft.video_path).exists():
+        issues.append(f"Video file missing: {draft.video_path}")
+    if draft.content is None:
+        issues.append("No content (caption) on this draft.")
+    else:
+        caption_len = len(draft.content.caption)
+        if caption_len > 2200:
+            issues.append(f"Caption too long for Instagram ({caption_len}/2200 chars).")
+        if caption_len > 5000:
+            issues.append(f"Caption too long for YouTube ({caption_len}/5000 chars).")
+        if len(draft.content.hashtags) > 30:
+            issues.append(f"Too many hashtags for Instagram ({len(draft.content.hashtags)}/30).")
+    return issues
+
+
 def build_description(draft: PostDraft) -> str:
     """Compose a caption/description body from the draft's content."""
     content = draft.content
