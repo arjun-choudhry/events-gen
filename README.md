@@ -233,5 +233,43 @@ draft = pipeline.run(city_slug="new-york", count=5, render_format="reel")
 print(draft.video_path)
 ```
 
-<!-- M6: dry-run publish, then live publish a draft -->
+### M6 — Publishing (YouTube + Instagram)
+
+Publish a rendered draft to YouTube and/or Instagram. The flow is **dry-run by
+default** — it simulates the full publish end-to-end (no accounts, no network),
+so you can try it with zero credentials:
+
+```bash
+# Generate a draft and dry-run publish to both destinations
+python -m events_gen.cli publish new-york --count 5 --targets youtube instagram
+
+# Go live (requires credentials, see below)
+python -m events_gen.cli publish new-york --live --targets youtube
+```
+
+In the UI, every draft preview has a **Publish** section: pick destinations,
+toggle **Dry run**, and click **Publish now** — results (and post URLs) surface
+inline and are stored in **History**.
+
+Publishing needs the optional extra: `pip install -e ".[publish]"`.
+
+**YouTube (Data API v3, OAuth):**
+1. Create a Google Cloud project → enable **YouTube Data API v3**.
+2. Create an **OAuth client** (Desktop app) → download the client-secrets JSON.
+3. Set `YOUTUBE_CLIENT_SECRETS_FILE` (and `YOUTUBE_TOKEN_FILE` for the cached
+   token). First live publish opens a browser to authorize your channel.
+4. Videos upload as **private** by default (change via `privacy_status`).
+
+**Instagram (Graph API):** publishing a Reel is two-step — create a media
+container from a **public video URL**, then publish it. So you need:
+1. An Instagram **Business/Creator** account linked to a Facebook Page.
+2. A Meta app with the Instagram Graph API + a **long-lived token**:
+   set `INSTAGRAM_ACCESS_TOKEN` and `INSTAGRAM_BUSINESS_ACCOUNT_ID`.
+3. A public host for the rendered mp4: set `EG_PUBLIC_VIDEO_BASE_URL` to a base
+   URL serving `data/output/` (S3, static host, or a tunnel). The hosting helper
+   maps `data/output/<draft>/reel.mp4` → `<base>/<draft>/reel.mp4`.
+
+Failure is isolated per destination: if one platform fails, the other still
+publishes and the draft is marked `failed` with the error recorded.
+
 <!-- M7: enable a schedule, trigger a run, inspect history -->

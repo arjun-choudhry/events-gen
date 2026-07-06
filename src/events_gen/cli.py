@@ -166,6 +166,38 @@ def _cmd_generate_content(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_publish(args: argparse.Namespace) -> int:
+    from . import pipeline, publish
+    from .models import Platform
+
+    targets = [Platform(t) for t in args.targets]
+    try:
+        draft = pipeline.run(
+            city_slug=args.city,
+            window=TimeWindow(args.window),
+            event_types=args.types,
+            count=args.count,
+            render_format=args.format,
+            targets=targets,
+            progress=lambda m: print(f"  … {m}"),
+        )
+    except (RegistryError, pipeline.PipelineError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    mode = "DRY-RUN" if not args.live else "LIVE"
+    print(f"\npublishing draft {draft.id} [{mode}] to: {', '.join(t.value for t in targets)}")
+    results = publish.publish_draft(draft, targets=targets, dry_run=not args.live)
+    exit_code = 0
+    for r in results:
+        if r.success:
+            print(f"  ✅ {r.platform.value}: {r.url}")
+        else:
+            print(f"  ❌ {r.platform.value}: {r.error}", file=sys.stderr)
+            exit_code = 1
+    return exit_code
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="events-gen", description="Events-Gen registry CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -218,6 +250,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", "-o", default=None, help="Output path (default: data/output/<id>/)"
     )
     rnd.set_defaults(func=_cmd_render)
+
+    pub = sub.add_parser("publish", help="Generate a draft and publish it (dry-run by default)")
+    pub.add_argument("city", help="City slug (see list-cities)")
+    pub.add_argument("--window", choices=["week", "month"], default="week")
+    pub.add_argument("--types", nargs="*", default=None, help="Event-type slugs (default: all)")
+    pub.add_argument("--count", type=int, default=5, help="Max events (default: 5)")
+    pub.add_argument("--format", choices=["reel", "landscape"], default="reel")
+    pub.add_argument(
+        "--targets",
+        nargs="+",
+        choices=["youtube", "instagram"],
+        default=["youtube", "instagram"],
+        help="Destinations (default: both)",
+    )
+    pub.add_argument(
+        "--live",
+        action="store_true",
+        help="Actually publish (default is a dry-run that touches no accounts)",
+    )
+    pub.set_defaults(func=_cmd_publish)
 
     return parser
 

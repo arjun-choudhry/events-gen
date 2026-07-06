@@ -234,7 +234,49 @@ def _render_preview(draft: PostDraft) -> None:
             _storage().save_draft(draft)
             st.success("Caption saved.")
 
+    _render_publish(draft)
+
     st.caption(f"Draft `{draft.id}` · {len(draft.events)} events · status: {draft.status.value}")
+
+
+def _render_publish(draft: PostDraft) -> None:
+    """R8/R9: destination-aware publish buttons with dry-run + live modes."""
+    st.markdown("**Publish (R8/R9)**")
+    targets = draft.targets or [Platform.YOUTUBE, Platform.INSTAGRAM]
+    dry_run = st.toggle(
+        "Dry run (no real upload)",
+        value=True,
+        key=f"dry_{draft.id}",
+        help="Simulates the publish flow end-to-end without touching any account.",
+    )
+    chosen = st.multiselect(
+        "Destinations",
+        [Platform.YOUTUBE, Platform.INSTAGRAM],
+        default=targets,
+        format_func=lambda p: p.value.capitalize(),
+        key=f"pubtargets_{draft.id}",
+    )
+    if st.button("Publish now", key=f"pub_{draft.id}", disabled=not chosen):
+        from events_gen import publish
+
+        with st.status("Publishing…", expanded=True) as status:
+            try:
+                results = publish.publish_draft(
+                    draft, targets=chosen, dry_run=dry_run, storage=_storage()
+                )
+                for r in results:
+                    if r.success:
+                        status.write(f"✅ {r.platform.value}: {r.url}")
+                    else:
+                        status.write(f"❌ {r.platform.value}: {r.error}")
+                ok = all(r.success for r in results)
+                status.update(
+                    label="Published." if ok else "Some destinations failed.",
+                    state="complete" if ok else "error",
+                )
+            except publish.PublishError as exc:
+                status.update(label="Publish error.", state="error")
+                st.warning(str(exc))
 
 
 # ── Drafts page ──────────────────────────────────────────────────────────

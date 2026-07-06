@@ -78,6 +78,13 @@ module = ["numpy.*", "moviepy.*", "PIL.*"]
 follow_imports = "skip"
 follow_imports_for_stubs = true
 
+# Google API client libraries are untyped; treat their calls as untyped-ok.
+[[tool.mypy.overrides]]
+module = ["google.*", "google_auth_oauthlib.*", "googleapiclient.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+disallow_untyped_calls = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

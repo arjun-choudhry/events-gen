@@ -220,15 +220,16 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M6 — Publishing
 **Goal:** push approved drafts to YouTube and Instagram. *(R8, R9)*
 
-- [ ] **M6.1** `publish/base.py` — `Publisher` interface + result model
-- [ ] **M6.2** `youtube.py` — OAuth flow, resumable upload, title/description/tags/visibility
-- [ ] **M6.3** Video **hosting helper** — upload rendered mp4 to a public URL (required by IG)
-- [ ] **M6.4** `instagram.py` — create media container (Reel) → poll status → publish
-- [ ] **M6.5** Instagram image/carousel path (fallback format)
-- [ ] **M6.6** Persist publish results + external post IDs to history
-- [ ] **M6.7** UI **Publish** buttons wired per destination with success/error surfacing
-- [ ] **M6.8** Tests/mocks for both publisher clients
-- [ ] **M6.9** **Update README** — document YouTube/Instagram credential setup, publish flow, and **runnable steps to try M6** (dry-run publish, then live publish a draft)
+- [x] **M6.1** `publish/base.py` — `Publisher` interface + `safe_publish` (failure isolation) + dry-run contract
+- [x] **M6.2** `youtube.py` — OAuth installed-app flow, resumable upload, title/description/tags/visibility
+- [x] **M6.3** Video **hosting helper** (`hosting.py`) — maps a local mp4 to a public URL (required by IG)
+- [x] **M6.4** `instagram.py` — create media container (Reel) → poll status → publish
+- [ ] **M6.5** Instagram image/carousel path (fallback format) — *deferred (Reel path complete; carousel is incremental)*
+- [x] **M6.6** Persist publish results + external post IDs to history (draft.results + `publish` Job)
+- [x] **M6.7** UI **Publish** buttons wired per destination with dry-run toggle + success/error surfacing
+- [x] **M6.8** Tests/mocks for both publisher clients (20 new; IG two-step flow via httpx MockTransport)
+- [x] **M6.9** **Update README** — documented credential setup, publish flow, and runnable dry-run→live steps
+- [x] **Extra** `publish_draft` orchestrator + `cli publish` command (dry-run by default, `--live` to go real)
 
 **Deliverable:** one-click publish of a draft to selected destination(s).
 **Acceptance:** a draft publishes to YouTube (real/sandbox) and IG container flow completes; result + IDs stored and shown.
@@ -325,3 +326,4 @@ Critical path: **M0 → M2 → M3 → M4 → M5 → M6**. M1 parallels M2. M7 an
 - 2026-07-05 — **M2 complete.** Added `timewindow.py`, `sources/` (`base` + `http_api` + `cache` + `ticketmaster` + `eventbrite` + `scraper` + `mock` + `aggregator`), and `cli fetch`. Sources gate on config and isolate failures via `safe_fetch`; aggregator dedupes (richest-wins), window-filters, ranks, returns top-N. 58 tests pass (30 new); ruff + mypy clean. Acceptance met: `fetch` returns a deduped/ranked/sized list; a failing source is isolated (test-verified). M2.8 (extra APIs) deferred as incremental. Note: real APIs untested against live endpoints (no keys yet) — parsing verified with mocked HTTP payloads.
 - 2026-07-05 — **M4 complete.** Added `render/` (`formats.py` with reel/landscape presets, `cards.py` with Pillow card rendering + word-wrap + price/venue, `video.py` with MoviePy 2.x composition — background + fade-in/out overlay cards + music fade/trim → h264 mp4). Added `cli render` command. Pinned moviepy>=2.0 in pyproject. 96 tests pass (22 new); ruff + mypy clean. Acceptance met: produces playable mp4 in both aspect ratios (1080×1920 reel, 1920×1080 landscape) with music mixing and readable event cards, verified via ffprobe + tests.
 - 2026-07-05 — **M5 complete.** Added `pipeline.py` (fetch→content→render→draft orchestrator with progress callback), `CityPreset` model + storage CRUD (presets table), and the Streamlit console `ui/app.py` (Create/Drafts/History/Settings pages wiring R1–R8, R10). Keyless-first: the console runs end-to-end with mock sources + template captions. 104 tests pass (8 new: pipeline + presets); ruff + mypy clean; app boots headless (HTTP 200 verified). Acceptance met: controls → generate → preview → save draft, all in-browser. UI page bodies are exercised via import + headless boot rather than unit tests (Streamlit needs a running script context); pipeline core is unit-tested.
+- 2026-07-05 — **M6 complete.** Added `publish/` (`base` Publisher iface + `safe_publish` isolation + dry-run, `hosting` public-URL helper, `youtube` OAuth+resumable upload, `instagram` two-step Reel flow, `publish_draft` orchestrator persisting results + history Job), UI Publish buttons (dry-run toggle + per-destination status), and `cli publish` (dry-run default, `--live`). Installed google-api-python-client/oauthlib; added mypy override for the untyped google libs. 124 tests pass (20 new; IG flow via httpx MockTransport); ruff + mypy clean; UI boots headless clean. Acceptance met: dry-run publishes to both destinations end-to-end (CLI + tests) with results/IDs stored on the draft and a `publish` job recorded; IG container flow verified against mocked Graph API. M6.5 (IG carousel fallback) deferred. Live paths (real YouTube OAuth upload, live Graph API) untested against real accounts (no credentials yet) — verified structurally + with mocks.
