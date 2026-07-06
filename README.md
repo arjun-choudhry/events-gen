@@ -106,7 +106,27 @@ python scripts/smoke.py
 Expected: tests pass, lint is clean, and the smoke check prints
 `M0 smoke check passed ✅`.
 
-<!-- M1: `python -m events_gen.sources.registry list-cities` etc. -->
+### M1 — city & event-type registry
+
+Inspect the catalog and add new cities from the CLI (no API keys needed):
+
+```bash
+# List configured cities and event types
+python -m events_gen.cli list-cities
+python -m events_gen.cli list-types
+
+# Add a new city (slug derived from name; creates assets/images/<slug>/)
+python -m events_gen.cli add-city \
+    --name "Paris" --country France --country-code FR \
+    --timezone Europe/Paris --lat 48.8566 --lon 2.3522
+
+# It now appears everywhere:
+python -m events_gen.cli list-cities   # Paris is listed
+```
+
+After `pip install -e .`, the same CLI is available as the `events-gen` command
+(e.g. `events-gen list-cities`).
+
 <!-- M2: fetch events for a city from the CLI -->
 <!-- M3: generate a content bundle with mock providers -->
 <!-- M4: render a sample mp4 -->

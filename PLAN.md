@@ -133,11 +133,11 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M1 — City & event-type registry
 **Goal:** manage the catalog of cities and event types the app operates on. *(R1, R3)*
 
-- [ ] **M1.1** City registry loader (name, country, coords, timezone, default asset paths)
-- [ ] **M1.2** Event-type taxonomy loader + validation
-- [ ] **M1.3** Helper to add a new city (writes `cities.yaml` + asset folders)
-- [ ] **M1.4** Unit tests for loaders + add-city helper
-- [ ] **M1.5** **Update README** — document city/event-type config format, how to add a city, and **runnable steps to try M1** (list cities/types, add a city)
+- [x] **M1.1** City registry loader (name, country, coords, timezone, default asset paths) — `registry.load_cities`
+- [x] **M1.2** Event-type taxonomy loader + validation — `registry.load_event_types`
+- [x] **M1.3** Helper to add a new city (writes `cities.yaml` + asset folders) — `registry.add_city` + `cli.py`
+- [x] **M1.4** Unit tests for loaders + add-city helper (14 tests)
+- [x] **M1.5** **Update README** — documented config format, how to add a city, and runnable M1 CLI steps
 
 **Deliverable:** programmatic access to cities/types used by pipeline + UI.
 **Acceptance:** adding a city via helper makes it selectable everywhere without code changes.
@@ -317,3 +317,4 @@ Critical path: **M0 → M2 → M3 → M4 → M5 → M6**. M1 parallels M2. M7 an
 - 2026-07-05 — Added "Update README" as the final sub-milestone of every milestone.
 - 2026-07-05 — Each "Update README" step now also adds **runnable steps to try that milestone's feature**, collected in the README's "Trying it out per milestone" section.
 - 2026-07-05 — **M0 complete.** Repo scaffolding, `pyproject.toml` (ruff/mypy/pytest), `.env.example` + `.gitignore`, `settings.py`, `cities.yaml` + `event_types.yaml`, `models.py`, `storage.py` (SQLite), README, and scripts. 16 tests pass; ruff + mypy clean. Acceptance met: PostDraft create→read→update verified in SQLite.
+- 2026-07-05 — **M1 complete.** Added `City`/`EventType` models, `registry.py` (loaders + validation + `add_city`), and `cli.py` (`list-cities`, `list-types`, `add-city`). Made `config_dir`/`assets_dir` overridable in settings for isolation. 30 tests pass (14 new); ruff + mypy clean. Acceptance met: added São Paulo via CLI → appears in `list-cities` with asset folder created, no code changes.

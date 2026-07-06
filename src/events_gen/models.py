@@ -60,6 +60,30 @@ class ScheduleCadence(StrEnum):
     MONTHLY = "monthly"
 
 
+class City(BaseModel):
+    """A city the app can generate posts for (from ``config/cities.yaml``)."""
+
+    slug: str
+    name: str
+    country: str
+    country_code: str
+    timezone: str
+    latitude: float
+    longitude: float
+    default_image: str | None = None
+    default_music: str | None = None
+
+
+class EventType(BaseModel):
+    """An event category (from ``config/event_types.yaml``)."""
+
+    slug: str
+    name: str
+    default_music: str | None = None
+    # per-source category hints, e.g. {"ticketmaster": ["Music"], "eventbrite": ["103"]}
+    source_categories: dict[str, list[str]] = Field(default_factory=dict)
+
+
 class Event(BaseModel):
     """A single normalized event, deduped and ranked by the aggregator."""
 

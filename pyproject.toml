@@ -49,7 +49,7 @@ dev = [
 ]
 
 [project.scripts]
-events-gen = "events_gen.ui.app:main"
+events-gen = "events_gen.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

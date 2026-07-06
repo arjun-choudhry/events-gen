@@ -43,6 +43,8 @@ class Settings(BaseSettings):
 
     # ── General ──
     data_dir: Path = Field(default=REPO_ROOT / "data", alias="EG_DATA_DIR")
+    config_dir: Path = Field(default=REPO_ROOT / "config", alias="EG_CONFIG_DIR")
+    assets_dir: Path = Field(default=REPO_ROOT / "assets", alias="EG_ASSETS_DIR")
     log_level: str = Field(default="INFO", alias="EG_LOG_LEVEL")
 
     # ── LLM (captions) ──
@@ -77,14 +79,6 @@ class Settings(BaseSettings):
     public_video_base_url: str | None = Field(default=None, alias="EG_PUBLIC_VIDEO_BASE_URL")
 
     # ── Derived paths (not from env) ──
-    @property
-    def config_dir(self) -> Path:
-        return REPO_ROOT / "config"
-
-    @property
-    def assets_dir(self) -> Path:
-        return REPO_ROOT / "assets"
-
     @property
     def cache_dir(self) -> Path:
         return self.data_dir / "cache"
