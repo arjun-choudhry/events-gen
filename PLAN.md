@@ -268,6 +268,153 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 
 ---
 
+## Phase 2 — "publish-ready" upgrades (M9–M14, planned)
+
+> Backlog captured 2026-07-06; detailed plan 2026-07-06. M0–M8 are complete and
+> live YouTube publishing works; these milestones target the gap between "it works"
+> and "I'd publish this straight away." Not yet started — pick up from here.
+> Ordering is roughly by impact on video quality.
+
+---
+
+### M9 — Sharper, higher-quality visuals
+**Goal:** eliminate pixelation so backgrounds + cards look crisp on both phone and desktop. Render quality is **selectable** per video (1080p vs 4K).
+
+**Root causes to fix:**
+- Source images (Openverse Flickr thumbnails, Unsplash `regular`) are often < 1080×1920 → upscaling blur.
+- x264 encode uses MoviePy's default (high CRF ≈ low quality).
+- Resize algorithm is whatever Pillow defaults (not LANCZOS).
+
+- [ ] **M9.1** Image source upgrades — request Unsplash `raw`/`w=2160&fit=crop` and Openverse `url` (not `thumbnail`). Add a minimum-resolution filter: skip any image < 70% of target px and fall through to the next source.
+- [ ] **M9.2** `Image.LANCZOS` everywhere — update `_cover_fit` (venue.py), `resolve_background`, and `_load_background` (video.py) to use LANCZOS resampling. **Never upscale beyond 1.25×**; if an image is too small, apply a blur-fill (zoom + gaussian blur as full-bleed backdrop).
+- [ ] **M9.3** Blur-fill fallback — when the only available image is too small for sharp scaling, generate a zoomed+blurred copy at the target size and overlay the crisp (smaller) image centered. Looks premium, hides the resolution gap.
+- [ ] **M9.4** Quality-selectable `VideoFormat` — add a `quality` field (`"1080p"` or `"4k"`) to `VideoFormat`; define new presets `reel_4k` (2160×3840) and `landscape_4k` (3840×2160). Add `"4k"` as an option in the UI format selector and CLI `--quality`.
+- [ ] **M9.5** x264 encode quality — set `ffmpeg_params=["-crf", "18", "-preset", "slow", "-pix_fmt", "yuv420p"]` in `write_videofile`. Expose `EG_RENDER_CRF` in settings (default 18) so it's tunable without code.
+- [ ] **M9.6** Card text rendering at 2× — render card images at 2× the target size then downscale (supersampling), so text edges are sub-pixel smooth even without anti-aliased fonts.
+- [ ] **M9.7** Tests — assert output resolution matches the chosen format; assert bitrate is above a threshold; assert sub-resolution images trigger blur-fill (not upscale). Smoke render at 4K without crash.
+- [ ] **M9.8** **Update README** — document quality selection, CRF setting, blur-fill behavior, and 4K format presets.
+
+**Deliverable:** visibly crisp output at 1080p and 4K, selectable per render.
+**Acceptance:** (a) a 1080p render using an Openverse image shows no upscaling blur on phone; (b) a 4K render produces a 3840×2160 file with CRF 18 and looks sharp on a desktop monitor.
+
+---
+
+### M10 — Better event ranking + interactive manual picker
+**Goal:** stop surfacing boring events; give the operator full control over which events appear, with a **live-updating preview** as events are toggled. *(addresses "curated events are boring")*
+
+- [ ] **M10.1** Fetch-first flow — split the Create page into two phases: (1) **Fetch** (city/window/types/count) → populates a candidate pool, stored on `PostDraft.candidate_events`; (2) **Generate** uses only the selected subset.
+- [ ] **M10.2** **Interactive event picker** — a full-width table/grid of all fetched candidates showing: ☑ checkbox, thumbnail (event promo image), title, date, venue, price, source badge. Sortable columns. Checked events are the ones that make it into the video.
+- [ ] **M10.3** Live lightweight preview — as the user toggles events on/off, a **timeline strip** (horizontal row of card thumbnails in order) + a text summary ("5 selected, ~24s video") updates instantly below the picker. No full video render until Generate.
+- [ ] **M10.4** Sort-by control — buttons above the picker: "Popularity" (default) / "Date" / "Price ↓" / "Name A–Z". Clicking re-orders the grid.
+- [ ] **M10.5** Better ranking signals from sources — Ticketmaster `attractions[0].upcomingEvents._total` (popularity proxy), SeatGeek `score` / `stats.listing_count`, PredictHQ `rank`/`phq_attendance`. Map each into `Event.rank_score`; the picker's default sort uses this.
+- [ ] **M10.6** Additional event sources (deferred M2.8) — SeatGeek, PredictHQ, Meetup. Each new source adds more candidates to the pool and brings its own popularity signal.
+- [ ] **M10.7** LLM "interestingness" scorer (optional toggle) — ask Gemini to rate each candidate's shareability (1–10) from its metadata. Cached per event id so it's not re-called. Adds to the composite `rank_score`. Keyless-degradable (off if no LLM key).
+- [ ] **M10.8** "Select top N" button — auto-checks the top N by the current sort, as a quick default if the operator doesn't want to hand-pick.
+- [ ] **M10.9** Tests — picker selection overrides auto top-N in the pipeline; sort orders match expectations; LLM scorer error degrades gracefully; new source signals affect order.
+- [ ] **M10.10** **Update README** — document the fetch→pick→generate flow, the picker UI, sort options, the LLM scorer, and new sources.
+
+**Deliverable:** an interactive picker with live preview, backed by richer ranking + new sources.
+**Acceptance:** fetch 30 candidates → use the picker to hand-select 5 → the video contains exactly those 5; the timeline preview updates live.
+
+---
+
+### M11 — Scale to many cities (type-in, multi-select, favorites, combined roundup)
+**Goal:** make many-city operation effortless — type any city, batch-generate for several, and save a favorites set that persists. Also support an optional **combined multi-city roundup video** alongside per-city ones.
+
+- [ ] **M11.1** **Geocoded type-in** — a text input that accepts any city name, calls a geocoding service (Nominatim/OpenStreetMap — keyless; or Google Geocoding), resolves `name → country / country_code / coords / timezone`, and adds it to the registry on the fly. Debounced autocomplete showing matching candidates as you type.
+- [ ] **M11.2** **Multi-city select** — the city control becomes a multi-select (Streamlit `multiselect` with type-to-search). Selecting N cities generates N independent drafts (one pipeline run per city, sequentially with per-city progress).
+- [ ] **M11.3** **Favorites** — a `favorite_cities` storage table (city_slug, user-set order). A "⭐ Favorites" chip-row at the top of the Create page lets you select your favorites with one click. A "Mark as favorite" star button on each city in the dropdown. Favorites persist across sessions.
+- [ ] **M11.4** Batch-generation UX — for multi-city, show a per-city progress row ("NYC ✅ / Tokyo ⏳ / London…") and route each finished draft to the Drafts page (or a new "Batch" view grouped by run).
+- [ ] **M11.5** **Combined roundup video** (optional) — after per-city videos are generated, an opt-in "Combined roundup" toggle renders a single video pulling the top event from each city into one clip (e.g. "5 Cities × 1 Event Each"). Uses a dedicated intro card ("THIS WEEKEND AROUND THE WORLD") and its own caption.
+- [ ] **M11.6** Roundup pipeline — `pipeline.run_roundup(city_slugs, ...)` merges the top event per city, builds a combined content bundle, renders one video.
+- [ ] **M11.7** Seed more cities — add 20+ major world cities to `cities.yaml` covering all continents. With M11.1, the seed list becomes just a convenience (any typed city works).
+- [ ] **M11.8** CLI support — `events-gen generate --cities new-york,tokyo,london` (comma-separated); `events-gen favorites add/list/remove`.
+- [ ] **M11.9** Tests — geocoder called on unknown city; multi-select produces N drafts; favorites round-trip; roundup video combines events from multiple cities.
+- [ ] **M11.10** **Update README** — document type-in, multi-city workflow, favorites, roundup, CLI batch commands.
+
+**Deliverable:** type any city, multi-select with favorites, batch-generate, optional combined roundup.
+**Acceptance:** type 3 new cities → mark as favorites → next session one-click favorites → generates 3 per-city drafts + 1 combined roundup.
+
+---
+
+### M12 — Catchier, more clickable videos (animation presets)
+**Goal:** make renders eye-catching and view-optimized. Two selectable animation styles: **"hype"** (TikTok/Reels-native: fast cuts, zoom, text pop) and **"cinematic"** (polished Ken Burns, smooth reveals). Existing static themes remain as a third "none" option.
+
+- [ ] **M12.1** Animation preset model — `AnimationPreset` dataclass (name, bg_motion, card_enter, card_exit, text_reveal, hook_style). Registry like themes: `ANIMATIONS = {"hype": ..., "cinematic": ..., "none": ...}`.
+- [ ] **M12.2** Background motion (Ken Burns / zoom) — per-card segment, the background slowly zooms in or pans. `"hype"` = fast 1.0→1.15× zoom + slight shake; `"cinematic"` = slow 1.0→1.05× pan across the image. Implemented via MoviePy `resize`+`position` keyframes.
+- [ ] **M12.3** Card enter/exit transitions — `"hype"` = slide-up from bottom + slight bounce/overshoot; `"cinematic"` = fade-in with a gentle upward drift. Replace the current `FadeIn`/`FadeOut` with preset-driven transition functions.
+- [ ] **M12.4** Kinetic text reveal — `"hype"` = per-word pop (each word scales from 0→1 in quick succession); `"cinematic"` = full-line fade with a subtle left-to-right wipe. Implemented as multiple timed `ImageClip`s or character-level animation.
+- [ ] **M12.5** Countdown numbers — events numbered "#N → #1" (highest-ranked last) with animated number transition between cards. Optional per preset (`"hype"` = yes, `"cinematic"` = no).
+- [ ] **M12.6** Hook intro — first 1–2s: big animated title text over a dimmed/blurred best-image. `"hype"` = "🔥 TOP {N} EVENTS IN {CITY} 🔥" with shake + zoom-in; `"cinematic"` = elegant fade with a slow Ken Burns on the city skyline.
+- [ ] **M12.7** Beat-synced pacing (optional, if music present) — analyze the track's BPM/onsets (librosa or aubio); snap card transitions to beats. Falls back to fixed `seconds_per_card` if no music or analysis fails. Add `librosa` as an optional dep.
+- [ ] **M12.8** LLM-generated scroll-stopping hooks — ask Gemini for 3 hook variants optimized for CTR; display in the UI for the operator to pick one; the winner becomes the intro text. Also generates thumbnail text (short, high-contrast, emoji-heavy).
+- [ ] **M12.9** Thumbnail generation — render a 1280×720 JPEG (YouTube standard) with big text + the best venue image, auto-set on YouTube upload (`snippet.thumbnails`). UI shows a thumbnail preview.
+- [ ] **M12.10** Wire into themes — each `Theme` gains an `animation` field (defaults to `"none"` for existing themes); new themes `"hype"` and `"cinematic"` ship with matching visual + animation presets.
+- [ ] **M12.11** UI integration — animation preset selector (separate from visual theme, since you can combine "neon" visuals with "hype" motion). Preview renders use the selected animation.
+- [ ] **M12.12** Tests — each animation preset renders without error; hook text is generated; thumbnail is a valid JPEG at 1280×720; beat analysis returns a BPM or degrades; countdown ordering matches rank.
+- [ ] **M12.13** **Update README** — document animation presets, hook generation, thumbnail, beat-sync, and the UI controls.
+
+**Deliverable:** two animation presets (hype + cinematic), hook intro, kinetic text, optional beat-sync, thumbnail.
+**Acceptance:** render "hype" and "cinematic" side-by-side — both visibly more dynamic than the current static version; hook grabs attention in the first second; thumbnail is auto-set on YouTube.
+
+---
+
+### M13 — Per-city destinations (Instagram + multiple YouTube channels)
+**Goal:** route each city's video to its own accounts. One city can publish to **1+ YouTube channels** and **its own Instagram account** — all managed in the UI.
+
+- [ ] **M13.1** Destination model — `Destination` (id, city_slug, platform, label, credentials_ref). Stored in a `destinations` table. A city has 0..N destinations.
+- [ ] **M13.2** Destination management UI — in the city settings (or a new "Destinations" page), for each city: list configured destinations, add/remove. "Connect YouTube channel" triggers the OAuth flow and saves the token under a unique ref. "Connect Instagram" stores account id + token.
+- [ ] **M13.3** Multi-channel YouTube — each YouTube destination has its own `client_secrets_file` + `token_file` (stored under `secrets/<dest_id>/`). The publisher receives a specific `Destination` and uses its credential set. Supports N channels per city.
+- [ ] **M13.4** Per-city Instagram — each IG destination stores `access_token` + `business_account_id` independently. The Instagram publisher receives the destination's credentials. A "Connect IG for this city" button in the UI saves them.
+- [ ] **M13.5** Publish routing — `publish_draft(draft, destinations=...)` iterates the city's configured destinations (or a manual override). For each, picks the right publisher + credentials. Results recorded per destination in `PublishResult` (extend model to include `destination_id`).
+- [ ] **M13.6** Default destinations on the city — when a city has configured destinations, they auto-fill the publish targets so the operator doesn't re-pick each time. Overridable per draft.
+- [ ] **M13.7** Credential security — tokens live in `secrets/<dest_id>/token.json`, never in the DB payload. `.gitignore` covers `secrets/`. Document the file layout.
+- [ ] **M13.8** Migration — existing global `YOUTUBE_CLIENT_SECRETS_FILE` / `INSTAGRAM_ACCESS_TOKEN` env vars become the "default" destination (used when no per-city destination is configured). Backward compatible.
+- [ ] **M13.9** Tests/mocks — city with 2 YT channels + 1 IG publishes to all three; one fails, others succeed; results tracked per destination; credential isolation.
+- [ ] **M13.10** **Update README** — document per-city destination setup (YouTube + IG), the secrets layout, the UI flow, and backward compatibility.
+
+**Deliverable:** one draft → published to all of a city's configured channels/accounts.
+**Acceptance:** configure city X with 2 YouTube channels + 1 Instagram → publish → all three receive the video, each tracked independently in history.
+
+---
+
+### M14 — Straight-to-publish polish (ties everything together)
+**Goal:** close the remaining gaps so "generate → publish" needs zero manual cleanup. The end-state: **one button → favorites → generated → published.**
+
+- [ ] **M14.1** Configurable YouTube visibility — `EG_YOUTUBE_PRIVACY` (per destination or global default): `public` | `unlisted` | `private`. Default: `unlisted` (visible via link, not searchable — safe to test, easy to switch to public).
+- [ ] **M14.2** Live Instagram publishing — verify end-to-end with a real Business account. Solve the public-URL hosting gap: either (a) built-in S3 upload (add `boto3`, upload the mp4, return the URL), or (b) a simple `cloudflared tunnel` helper that serves `data/output/` for the duration of the publish, or (c) Firebase Hosting / Vercel deploy. Decide in M14.2a, implement in M14.2b.
+- [ ] **M14.3** Pre-publish validation — before publishing, automatically check: video file exists + is valid mp4 (probe); resolution ≥ platform minimum; audio track present (if music selected); caption ≤ platform limit (2200 chars IG, 5000 YT); hashtag count ≤ 30 (IG). Block publish with a clear message if any check fails.
+- [ ] **M14.4** One-click "Publish favorites" — a top-level action (button in sidebar + CLI command) that: loads favorite cities → for each, generates a draft (or uses the latest ready draft) → publishes to all configured destinations → shows a batch summary.
+- [ ] **M14.5** Post-publish confirmation — after publish, show the live URL(s), embed a preview if possible (YouTube oEmbed / IG embed), and record analytics (publish time, destinations, external ids) in history.
+- [ ] **M14.6** Scheduling integration — the scheduler (M7) gains per-city destination awareness so `auto_publish=True` publishes to the city's configured destinations (not a global target set).
+- [ ] **M14.7** Tests — validation blocks bad drafts; batch publish hits N destinations; scheduler uses per-city destinations; S3 upload (mocked) returns a URL.
+- [ ] **M14.8** **Update README** — document the publish-favorites flow, validation checks, IG hosting solution, scheduler destination routing, and the final end-to-end workflow.
+
+**Deliverable:** one button → all favorite cities' videos generated and published to their destinations.
+**Acceptance:** press "Publish favorites" → 3 cities × (2 YT channels + 1 IG each) = 9 successful publishes, all tracked in history with live URLs.
+
+---
+
+### Phase 2 dependency graph
+
+```
+M9 (visuals) ─────────────────┐
+                               ├──> M14 (polish, ties it all together)
+M10 (picker + ranking) ────────┤
+                               │
+M11 (multi-city + favorites) ──┤
+                               │
+M12 (animations + hooks) ──────┤
+                               │
+M13 (per-city destinations) ───┘
+```
+
+M9–M13 are independently startable (no hard dependencies between them).
+M14 integrates them and is the final polish pass. Recommended order of
+attack for maximum impact: **M9 → M10 → M12 → M11 → M13 → M14**.
+
+---
+
 ## 6. External accounts & credentials (setup checklist)
 
 - [ ] **Anthropic API key** (captions)
@@ -349,3 +496,4 @@ A day of feature enhancements and going **live** with real credentials. All chan
 - **City dropdown** is now type-to-search (label includes country).
 - **UI layout fixes.** Reverted a botched full-width CSS hack that exploded the page on Generate; page is back to the single centered column with only the theme gallery using more width.
 - **Live YouTube publishing — verified.** Reinstalled the `publish` extra (env had reset), then worked through the real-account setup: OAuth consent **test users** (renamed to *Audience* in the new console), channel existence, and enabling **YouTube Data API v3**. Improved `youtube._friendly_error` to surface the API's real `reason` (`youtubeSignupRequired`, `quotaExceeded`, `accessNotConfigured`, …) instead of guessing. **A real video published successfully.** (Uploads default to `private` visibility.) Instagram live path still pending (needs Business account + public video host).
+- **Phase 2 backlog captured.** Added milestones **M9–M14** (see "Phase 2 — publish-ready upgrades") for: sharper visuals (M9), better ranking + manual event picker (M10), multi-city scale with type-in + favorites (M11), catchier/clickable videos (M12), per-city Instagram + multiple YouTube channels (M13), and straight-to-publish polish (M14). Not started — planned work.
