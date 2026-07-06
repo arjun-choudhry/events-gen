@@ -113,21 +113,21 @@ def test_get_city_unknown_raises(settings: Settings) -> None:
 def test_add_city_appends_and_creates_dirs(settings: Settings) -> None:
     before = len(load_cities(settings))
     city = add_city(
-        name="Paris",
-        country="France",
-        country_code="FR",
-        timezone="Europe/Paris",
-        latitude=48.8566,
-        longitude=2.3522,
+        name="Helsinki",
+        country="Finland",
+        country_code="FI",
+        timezone="Europe/Helsinki",
+        latitude=60.1699,
+        longitude=24.9384,
         settings=settings,
     )
-    assert city.slug == "paris"
-    assert city.default_image == "images/paris/default.jpg"
+    assert city.slug == "helsinki"
+    assert city.default_image == "images/helsinki/default.jpg"
 
     after = load_cities(settings)
     assert len(after) == before + 1
-    assert get_city("paris", settings).country == "France"
-    assert (settings.assets_dir / "images" / "paris").is_dir()
+    assert get_city("helsinki", settings).country == "Finland"
+    assert (settings.assets_dir / "images" / "helsinki").is_dir()
 
 
 def test_add_city_duplicate_raises(settings: Settings) -> None:
@@ -145,14 +145,14 @@ def test_add_city_duplicate_raises(settings: Settings) -> None:
 
 def test_add_city_preserves_existing_entries(settings: Settings) -> None:
     add_city(
-        name="Sydney",
-        country="Australia",
-        country_code="AU",
-        timezone="Australia/Sydney",
-        latitude=-33.87,
-        longitude=151.21,
+        name="Oslo",
+        country="Norway",
+        country_code="NO",
+        timezone="Europe/Oslo",
+        latitude=59.91,
+        longitude=10.75,
         settings=settings,
     )
     # Existing cities still load and parse correctly after the write.
     slugs = {c.slug for c in load_cities(settings)}
-    assert {"new-york", "tokyo", "sydney"} <= slugs
+    assert {"new-york", "tokyo", "oslo"} <= slugs

@@ -61,6 +61,12 @@ CREATE TABLE IF NOT EXISTS presets (
     payload     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_presets_city ON presets(city_slug);
+
+CREATE TABLE IF NOT EXISTS favorites (
+    city_slug   TEXT PRIMARY KEY,
+    position    INTEGER NOT NULL DEFAULT 0,
+    added_at    TEXT NOT NULL
+);
 """
 
 
@@ -324,3 +330,26 @@ class Storage:
         with self._connect() as conn:
             cur = conn.execute("DELETE FROM presets WHERE id = ?", (preset_id,))
             return cur.rowcount > 0
+
+    # ── favorites (M11) ──
+    def save_favorite(self, city_slug: str) -> None:
+        """Add a city to favorites (idempotent — re-adding is a no-op)."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO favorites (city_slug, position, added_at)
+                VALUES (?, (SELECT COALESCE(MAX(position), 0) + 1 FROM favorites), ?)
+                ON CONFLICT(city_slug) DO NOTHING
+                """,
+                (city_slug, _iso(_utcnow())),
+            )
+
+    def remove_favorite(self, city_slug: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM favorites WHERE city_slug = ?", (city_slug,))
+
+    def list_favorites(self) -> list[str]:
+        """Return favorite city slugs in position order."""
+        with self._connect() as conn:
+            rows = conn.execute("SELECT city_slug FROM favorites ORDER BY position ASC").fetchall()
+        return [r["city_slug"] for r in rows]

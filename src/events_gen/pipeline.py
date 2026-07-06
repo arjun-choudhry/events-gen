@@ -209,3 +209,81 @@ def select_theme(
     draft.theme = theme
     draft.video_path = path
     return storage.save_draft(draft)
+
+
+def run_roundup(
+    *,
+    city_slugs: list[str],
+    events_per_city: int = 1,
+    render_format: str = "reel",
+    theme: str | None = None,
+    intensity: float | None = None,
+    animation: str | None = None,
+    storage: Storage | None = None,
+    settings: Settings | None = None,
+    progress: ProgressFn = _noop,
+) -> PostDraft:
+    """Generate a combined multi-city roundup video.
+
+    Fetches the top ``events_per_city`` event(s) from each city, merges them into
+    one event list, and renders a single video with a roundup-style caption.
+    """
+    from .content.builder import build_content
+
+    settings = settings or get_settings()
+    settings.ensure_dirs()
+    storage = storage or Storage(settings.db_path)
+
+    all_events: list[Event] = []
+    city_names: list[str] = []
+    for slug in city_slugs:
+        city = get_city(slug, settings)
+        city_names.append(city.name)
+        all_types = load_event_types(settings)
+        progress(f"Fetching top event(s) from {city.name}…")
+        date_range = compute_window(TimeWindow.WEEK, city.timezone)
+        events = aggregator.fetch(city, date_range, [], count=events_per_city, settings=settings)
+        all_events.extend(events)
+
+    if not all_events:
+        raise PipelineError("no events found across any of the selected cities")
+
+    progress(f"Building roundup for {len(city_slugs)} cities, {len(all_events)} events…")
+    draft = PostDraft(
+        city_slug=city_slugs[0],
+        window=TimeWindow.WEEK,
+        event_types=[],
+        event_count=len(all_events),
+        events=all_events,
+        status=DraftStatus.RENDERING,
+    )
+
+    # Use the first city for background/music resolution.
+    city = get_city(city_slugs[0], settings)
+    all_types = load_event_types(settings)
+    content = build_content(
+        city,
+        all_events,
+        all_types,
+        "week",
+        draft_id=draft.id,
+        settings=settings,
+    )
+    # Override the title with a roundup-style one.
+    content.title = f"This Weekend: {', '.join(city_names[:4])}"
+    if len(city_names) > 4:
+        content.title += f" + {len(city_names) - 4} more"
+    draft.content = content
+
+    fmt = get_format(render_format)
+    progress(f"Rendering roundup ({fmt.name})…")
+    out_path = settings.output_dir / draft.id / f"roundup_{fmt.name}.mp4"
+    render_video(
+        content, all_events, out_path, fmt, theme=theme, intensity=intensity, animation=animation
+    )
+    draft.video_path = str(out_path)
+    draft.status = DraftStatus.READY
+
+    saved = storage.save_draft(draft)
+    progress("Roundup ready.")
+    return saved

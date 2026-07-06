@@ -26,6 +26,9 @@ dependencies = [
     # media
     "moviepy>=2.0",
     "Pillow>=10.2",
+    # geocoding (multi-city type-in)
+    "geopy>=2.4",
+    "timezonefinder>=6.2",
     # scheduling
     "APScheduler>=3.10",
     # ui

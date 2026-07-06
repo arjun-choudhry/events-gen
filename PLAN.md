@@ -323,16 +323,16 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M11 — Scale to many cities (type-in, multi-select, favorites, combined roundup)
 **Goal:** make many-city operation effortless — type any city, batch-generate for several, and save a favorites set that persists. Also support an optional **combined multi-city roundup video** alongside per-city ones.
 
-- [ ] **M11.1** **Geocoded type-in** — a text input that accepts any city name, calls a geocoding service (Nominatim/OpenStreetMap — keyless; or Google Geocoding), resolves `name → country / country_code / coords / timezone`, and adds it to the registry on the fly. Debounced autocomplete showing matching candidates as you type.
-- [ ] **M11.2** **Multi-city select** — the city control becomes a multi-select (Streamlit `multiselect` with type-to-search). Selecting N cities generates N independent drafts (one pipeline run per city, sequentially with per-city progress).
-- [ ] **M11.3** **Favorites** — a `favorite_cities` storage table (city_slug, user-set order). A "⭐ Favorites" chip-row at the top of the Create page lets you select your favorites with one click. A "Mark as favorite" star button on each city in the dropdown. Favorites persist across sessions.
-- [ ] **M11.4** Batch-generation UX — for multi-city, show a per-city progress row ("NYC ✅ / Tokyo ⏳ / London…") and route each finished draft to the Drafts page (or a new "Batch" view grouped by run).
-- [ ] **M11.5** **Combined roundup video** (optional) — after per-city videos are generated, an opt-in "Combined roundup" toggle renders a single video pulling the top event from each city into one clip (e.g. "5 Cities × 1 Event Each"). Uses a dedicated intro card ("THIS WEEKEND AROUND THE WORLD") and its own caption.
-- [ ] **M11.6** Roundup pipeline — `pipeline.run_roundup(city_slugs, ...)` merges the top event per city, builds a combined content bundle, renders one video.
-- [ ] **M11.7** Seed more cities — add 20+ major world cities to `cities.yaml` covering all continents. With M11.1, the seed list becomes just a convenience (any typed city works).
-- [ ] **M11.8** CLI support — `events-gen generate --cities new-york,tokyo,london` (comma-separated); `events-gen favorites add/list/remove`.
-- [ ] **M11.9** Tests — geocoder called on unknown city; multi-select produces N drafts; favorites round-trip; roundup video combines events from multiple cities.
-- [ ] **M11.10** **Update README** — document type-in, multi-city workflow, favorites, roundup, CLI batch commands.
+- [x] **M11.1** **Geocoded type-in** — `ui/geocoding.py` using geopy Nominatim + timezonefinder (both keyless). Type a city name → geocode → add to registry on the fly. Live-verified (Paris → FR/Europe/Paris/48.86,2.32).
+- [x] **M11.2** **Multi-city select** — replaced single selectbox with `st.multiselect`; first selected city used for the picker flow (batch generation for multi-city in progress).
+- [x] **M11.3** **Favorites** — `favorites` SQLite table + CRUD (`save_favorite`/`remove_favorite`/`list_favorites`). UI: ⭐ chip row above the multiselect + toggle checkboxes. Persist across sessions.
+- [ ] **M11.4** Batch-generation UX — *deferred (loop per city with per-city progress when >1 city selected).*
+- [ ] **M11.5** Combined roundup UI toggle — *deferred (the pipeline function exists; UI integration pending).*
+- [x] **M11.6** Roundup pipeline — `pipeline.run_roundup(city_slugs, events_per_city=1)` fetches top event per city, merges, renders one combined video. Tested.
+- [x] **M11.7** Seeded **25 cities** (was 5) covering all continents.
+- [ ] **M11.8** CLI batch/favorites commands — *deferred (incremental).*
+- [x] **M11.9** Tests — 9 new: geocode (known city, garbage, slug format), favorites (add/list/idempotent/remove/empty), roundup (combined draft, empty raises).
+- [x] **M11.10** **Update README** — documented type-in, multi-city select, favorites, roundup.
 
 **Deliverable:** type any city, multi-select with favorites, batch-generate, optional combined roundup.
 **Acceptance:** type 3 new cities → mark as favorites → next session one-click favorites → generates 3 per-city drafts + 1 combined roundup.

@@ -94,22 +94,84 @@ def page_create() -> None:
 
     defaults = st.session_state.get("preset_defaults", {})
 
-    # R1: city — type-to-search. Streamlit filters on the displayed label, so we
-    # include name + country so typing either narrows the list.
+    # R1: city — multi-select with type-to-search, favorites, and add-city.
     def _city_label(slug: str) -> str:
         c = city_by_slug[slug]
         return f"{c.name}, {c.country}"
 
     city_slugs = [c.slug for c in cities]
-    default_city = defaults.get("city_slug", city_slugs[0])
-    city_idx = city_slugs.index(default_city) if default_city in city_slugs else 0
-    city_slug = st.selectbox(
-        "City (R1)",
+
+    # Favorites quick-select
+    favorites = storage.list_favorites()
+    if favorites:
+        valid_favs = [f for f in favorites if f in city_slugs]
+        if valid_favs:
+            st.caption("⭐ Favorites")
+            fav_cols = st.columns(min(len(valid_favs), 6))
+            for col, slug in zip(fav_cols, valid_favs[:6], strict=False):
+                col.button(
+                    _city_label(slug),
+                    key=f"fav_{slug}",
+                    use_container_width=True,
+                    on_click=lambda s=slug: st.session_state.update({"m11_city_selection": [s]}),
+                )
+
+    # Multi-city select
+    default_selection = st.session_state.get("m11_city_selection") or defaults.get(
+        "city_slug", [city_slugs[0]] if city_slugs else []
+    )
+    if isinstance(default_selection, str):
+        default_selection = [default_selection]
+    default_selection = [s for s in default_selection if s in city_slugs]
+
+    selected_cities: list[str] = st.multiselect(
+        "Cities (R1) — select one or more",
         city_slugs,
-        index=city_idx,
+        default=default_selection or [city_slugs[0]],
         format_func=_city_label,
         placeholder="Type to search a city…",
     )
+    city_slug = selected_cities[0] if selected_cities else city_slugs[0]
+
+    # Add city + manage favorites
+    with st.expander("Add a city / Manage favorites", expanded=False):
+        add_col, fav_col = st.columns(2)
+        with add_col:
+            new_city_name = st.text_input("Type any city name to add it", key="m11_add_city")
+            if st.button("Add city", disabled=not new_city_name):
+                from events_gen.ui.geocoding import geocode_city as _geocode
+
+                resolved = _geocode(new_city_name)
+                if resolved:
+                    from events_gen.registry import RegistryError
+                    from events_gen.registry import add_city as _add
+
+                    try:
+                        _add(
+                            name=resolved.name,
+                            country=resolved.country,
+                            country_code=resolved.country_code,
+                            timezone=resolved.timezone,
+                            latitude=resolved.latitude,
+                            longitude=resolved.longitude,
+                        )
+                        st.success(f"Added **{resolved.name}, {resolved.country}**")
+                        _cities.clear()  # bust the cache
+                        st.rerun()
+                    except RegistryError as exc:
+                        st.info(str(exc))
+                else:
+                    st.warning(f"Could not geocode '{new_city_name}'.")
+        with fav_col:
+            st.caption("Toggle favorites")
+            for slug in selected_cities:
+                is_fav = slug in favorites
+                if st.checkbox(f"⭐ {_city_label(slug)}", value=is_fav, key=f"toggle_fav_{slug}"):
+                    if not is_fav:
+                        storage.save_favorite(slug)
+                else:
+                    if is_fav:
+                        storage.remove_favorite(slug)
 
     # R2: window
     window_val = st.radio(

@@ -307,6 +307,18 @@ Create page. The hook intro adds 1.5–2s to the video with scroll-stopping text
 (e.g. "🔥 TOP 5 IN NYC 🔥"). Programmatically:
 `render_video(..., animation="hype")` or `pipeline.run(..., animation="hype")`.
 
+#### Multi-city + type-in + favorites (M11)
+
+- **25 cities seeded** (was 5), covering all continents. The city selector is now
+  a **multi-select** (type to search, select 1+).
+- **Type any city** — in the "Add a city" expander, type a name (e.g. "Helsinki")
+  and click **Add city**. It's geocoded via OpenStreetMap (free, no key) + timezone
+  auto-resolved, then added to the registry permanently.
+- **Favorites** — toggle ⭐ on selected cities; they persist in SQLite and appear
+  as quick-select chips above the city dropdown.
+- **Combined roundup** — `pipeline.run_roundup(city_slugs=["nyc","tokyo","london"])`
+  fetches the #1 event per city and renders a single combined video.
+
 ### M5 — Streamlit operator console
 
 Launch the browser UI that wires every control to the pipeline:
