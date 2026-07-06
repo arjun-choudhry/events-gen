@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .models import CityPreset, Job, PostDraft, Schedule
+from .models import CityPreset, Destination, Job, PostDraft, Schedule
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS drafts (
@@ -67,6 +67,16 @@ CREATE TABLE IF NOT EXISTS favorites (
     position    INTEGER NOT NULL DEFAULT 0,
     added_at    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS destinations (
+    id          TEXT PRIMARY KEY,
+    city_slug   TEXT NOT NULL,
+    platform    TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    payload     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_destinations_city ON destinations(city_slug);
 """
 
 
@@ -353,3 +363,54 @@ class Storage:
         with self._connect() as conn:
             rows = conn.execute("SELECT city_slug FROM favorites ORDER BY position ASC").fetchall()
         return [r["city_slug"] for r in rows]
+
+    # ── destinations (M13) ──
+    def save_destination(self, dest: Destination) -> Destination:
+        now = _utcnow()
+        if dest.created_at is None:
+            dest.created_at = now
+        dest.updated_at = now
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO destinations (id, city_slug, platform, created_at, updated_at, payload)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    city_slug=excluded.city_slug,
+                    platform=excluded.platform,
+                    updated_at=excluded.updated_at,
+                    payload=excluded.payload
+                """,
+                (
+                    dest.id,
+                    dest.city_slug,
+                    dest.platform.value,
+                    _iso(dest.created_at),
+                    _iso(dest.updated_at),
+                    dest.model_dump_json(),
+                ),
+            )
+        return dest
+
+    def get_destination(self, dest_id: str) -> Destination | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM destinations WHERE id = ?", (dest_id,)
+            ).fetchone()
+        return Destination.model_validate_json(row["payload"]) if row else None
+
+    def list_destinations(self, *, city_slug: str | None = None) -> list[Destination]:
+        query = "SELECT payload FROM destinations"
+        params: list[object] = []
+        if city_slug is not None:
+            query += " WHERE city_slug = ?"
+            params.append(city_slug)
+        query += " ORDER BY created_at ASC"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [Destination.model_validate_json(r["payload"]) for r in rows]
+
+    def delete_destination(self, dest_id: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM destinations WHERE id = ?", (dest_id,))
+            return cur.rowcount > 0

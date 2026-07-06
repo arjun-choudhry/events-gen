@@ -129,10 +129,33 @@ class PostContent(BaseModel):
     event_backgrounds: dict[str, str] = Field(default_factory=dict)
 
 
+class Destination(BaseModel):
+    """A publishing account scoped to a city (M13).
+
+    One Destination = one platform account. A city can have N destinations
+    (e.g. 2 YouTube channels + 1 Instagram). Credentials are stored under
+    ``secrets/<id>/`` so they stay out of the database payload.
+    """
+
+    id: str = Field(default_factory=_new_id)
+    city_slug: str
+    label: str
+    platform: Platform
+    # YouTube credential paths (relative to repo root / secrets/).
+    youtube_client_secrets_path: str | None = None
+    youtube_token_path: str | None = None
+    # Instagram credentials (stored directly — they're just strings).
+    instagram_access_token: str | None = None
+    instagram_business_account_id: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class PublishResult(BaseModel):
-    """Outcome of publishing a draft to one platform."""
+    """Outcome of publishing a draft to one platform/destination."""
 
     platform: Platform
+    destination_id: str | None = None
     success: bool
     external_id: str | None = None  # video id / media id
     url: str | None = None

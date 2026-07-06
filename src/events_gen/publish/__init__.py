@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from ..models import DraftStatus, Job, JobStatus, Platform, PostDraft, PublishResult
+from ..models import Destination, DraftStatus, Job, JobStatus, Platform, PostDraft, PublishResult
 from ..settings import Settings, get_settings
 from ..storage import Storage
 from .base import Publisher, PublishError
@@ -36,13 +36,18 @@ __all__ = [
 ]
 
 
-def get_publisher(platform: Platform, *, settings: Settings | None = None) -> Publisher:
-    """Return the publisher for ``platform``."""
+def get_publisher(
+    platform: Platform,
+    *,
+    destination: Destination | None = None,
+    settings: Settings | None = None,
+) -> Publisher:
+    """Return the publisher for ``platform``, optionally scoped to a destination."""
     settings = settings or get_settings()
     if platform is Platform.YOUTUBE:
-        return YouTubePublisher(settings=settings)
+        return YouTubePublisher(destination=destination, settings=settings)
     if platform is Platform.INSTAGRAM:
-        return InstagramPublisher(settings=settings)
+        return InstagramPublisher(destination=destination, settings=settings)
     raise ValueError(f"no publisher for platform: {platform!r}")  # pragma: no cover
 
 
@@ -50,48 +55,70 @@ def publish_draft(
     draft: PostDraft,
     targets: list[Platform] | None = None,
     *,
+    destinations: list[Destination] | None = None,
     dry_run: bool = False,
     storage: Storage | None = None,
     settings: Settings | None = None,
 ) -> list[PublishResult]:
-    """Publish ``draft`` to each target, persisting results and status.
+    """Publish ``draft`` to each target/destination, persisting results and status.
 
-    ``targets`` defaults to the draft's own ``targets``. Uses ``safe_publish`` so
-    a single platform failure is captured as a failed result rather than raising.
+    If ``destinations`` is provided, publishes to each destination (ignoring
+    ``targets``). Otherwise falls back to ``targets`` (or the draft's own targets)
+    with global credentials — backward compatible.
     """
     settings = settings or get_settings()
     storage = storage or Storage(settings.db_path)
-    to_publish = targets if targets is not None else draft.targets
-    if not to_publish:
-        raise PublishError("no publish targets specified")
 
     draft.status = DraftStatus.PUBLISHING
     storage.save_draft(draft)
 
     results: list[PublishResult] = []
-    for platform in to_publish:
-        publisher = get_publisher(platform, settings=settings)
-        result = publisher.safe_publish(draft, dry_run=dry_run)
-        results.append(result)
-        logger.info(
-            "published draft %s to %s: %s",
-            draft.id,
-            platform.value,
-            "ok" if result.success else "FAILED",
-        )
 
-    # Merge results (replace any prior result for the same platform).
-    by_platform = {r.platform: r for r in draft.results}
+    if destinations:
+        # Per-destination routing (M13).
+        for dest in destinations:
+            publisher = get_publisher(dest.platform, destination=dest, settings=settings)
+            result = publisher.safe_publish(draft, dry_run=dry_run)
+            result.destination_id = dest.id
+            results.append(result)
+            logger.info(
+                "published draft %s to %s/%s: %s",
+                draft.id,
+                dest.platform.value,
+                dest.label,
+                "ok" if result.success else "FAILED",
+            )
+    else:
+        # Legacy global-credential path.
+        to_publish = targets if targets is not None else draft.targets
+        if not to_publish:
+            raise PublishError("no publish targets specified")
+        for platform in to_publish:
+            publisher = get_publisher(platform, settings=settings)
+            result = publisher.safe_publish(draft, dry_run=dry_run)
+            results.append(result)
+            logger.info(
+                "published draft %s to %s: %s",
+                draft.id,
+                platform.value,
+                "ok" if result.success else "FAILED",
+            )
+
+    # Merge results onto the draft.
+    existing = {(r.platform, r.destination_id): r for r in draft.results}
     for r in results:
-        by_platform[r.platform] = r
-    draft.results = list(by_platform.values())
+        existing[(r.platform, r.destination_id)] = r
+    draft.results = list(existing.values())
 
     all_ok = all(r.success for r in results)
     draft.status = DraftStatus.PUBLISHED if all_ok else DraftStatus.FAILED
     storage.save_draft(draft)
 
-    # Record a history job (M6.6).
-    detail = ", ".join(f"{r.platform.value}={'ok' if r.success else 'fail'}" for r in results)
+    detail = ", ".join(
+        f"{r.platform.value}{'/' + r.destination_id[:8] if r.destination_id else ''}="
+        f"{'ok' if r.success else 'fail'}"
+        for r in results
+    )
     storage.save_job(
         Job(
             kind="publish",

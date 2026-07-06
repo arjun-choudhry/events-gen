@@ -285,39 +285,8 @@ def page_create() -> None:
         format_func=lambda p: p.value.capitalize(),
     )
 
-    # ── Action buttons ──
-    col_fetch, col_quick, col_save = st.columns([1, 1, 1])
-    fetch_clicked = col_fetch.button(
-        "Fetch Events",
-        type="primary",
-        use_container_width=True,
-        help="Fetch a pool of event candidates for the picker below.",
-    )
-    quick_gen = col_quick.button(
-        "Quick Generate",
-        use_container_width=True,
-        help="Skip the picker — generate directly using the top events.",
-    )
-    with col_save.popover("Save as preset", use_container_width=True):
-        preset_name = st.text_input("Preset name")
-        if st.button("Save preset", disabled=not preset_name):
-            storage.save_preset(
-                CityPreset(
-                    name=preset_name,
-                    city_slug=city_slug,
-                    window=window_val,
-                    event_types=selected_types,
-                    event_count=count,
-                    render_format=fmt,
-                    theme=theme,
-                    intensity=intensity,
-                    targets=targets,
-                )
-            )
-            st.success(f"Saved preset '{preset_name}'.")
-
-    # Shared generation kwargs (used by both picker-Generate and Quick Generate).
-    gen_kwargs: dict[str, object] = {
+    # Shared generation kwargs.
+    gen_kwargs: dict[str, Any] = {
         "city_slug": city_slug,
         "window": window_val,
         "event_types": selected_types,
@@ -334,24 +303,142 @@ def page_create() -> None:
         "targets": targets,
     }
 
-    # ── Quick Generate (old flow, no picker) ──
-    if quick_gen:
-        _run_generation(**gen_kwargs, preview_all_themes=False)
+    # ── Multi-city tabs or single-city flow ──
+    if len(selected_cities) > 1:
+        # Tabbed multi-city workflow (no top-level Fetch/Generate — each tab has its own).
+        st.divider()
+        col_batch, col_preset = st.columns([2, 1])
+        if col_batch.button(
+            "Generate All (auto-pick)",
+            type="primary",
+            help="Batch-generate for all cities using the top events (no manual picking).",
+            use_container_width=True,
+        ):
+            _batch_generate_all(selected_cities, gen_kwargs)
+        with col_preset.popover("Save as preset", use_container_width=True):
+            preset_name = st.text_input("Preset name")
+            if st.button("Save preset", disabled=not preset_name):
+                storage.save_preset(
+                    CityPreset(
+                        name=preset_name,
+                        city_slug=city_slug,
+                        window=window_val,
+                        event_types=selected_types,
+                        event_count=count,
+                        render_format=fmt,
+                        theme=theme,
+                        intensity=intensity,
+                        targets=targets,
+                    )
+                )
+                st.success(f"Saved preset '{preset_name}'.")
 
-    # ── Fetch → Picker → Generate flow (M10) ──
-    if fetch_clicked:
-        _do_fetch(city_slug, window_val, selected_types, count, settings=None)
+        tabs = st.tabs([_city_label(s) for s in selected_cities])
+        for tab, tab_city in zip(tabs, selected_cities, strict=False):
+            with tab:
+                city_gen_kwargs = {**gen_kwargs, "city_slug": tab_city}
+                _render_city_tab(tab_city, window_val, selected_types, count, fmt, city_gen_kwargs)
+    else:
+        # Single-city flow: action buttons + M10 picker.
+        col_fetch, col_quick, col_save = st.columns([1, 1, 1])
+        fetch_clicked = col_fetch.button(
+            "Fetch Events",
+            type="primary",
+            use_container_width=True,
+            help="Fetch a pool of event candidates for the picker below.",
+        )
+        quick_gen = col_quick.button(
+            "Quick Generate",
+            use_container_width=True,
+            help="Skip the picker — generate directly using the top events.",
+        )
+        with col_save.popover("Save as preset", use_container_width=True):
+            preset_name = st.text_input("Preset name")
+            if st.button("Save preset", disabled=not preset_name):
+                storage.save_preset(
+                    CityPreset(
+                        name=preset_name,
+                        city_slug=city_slug,
+                        window=window_val,
+                        event_types=selected_types,
+                        event_count=count,
+                        render_format=fmt,
+                        theme=theme,
+                        intensity=intensity,
+                        targets=targets,
+                    )
+                )
+                st.success(f"Saved preset '{preset_name}'.")
 
-    current_params = {"city": city_slug, "window": window_val, "types": selected_types}
-    _render_picker_section(count, fmt, gen_kwargs, current_params)
+        if quick_gen:
+            _run_generation(**gen_kwargs, preview_all_themes=False)
 
-    # Show the just-generated draft's preview inline.
-    draft_id = st.session_state.get("last_draft_id")
+        if fetch_clicked:
+            _do_fetch(city_slug, window_val, selected_types, count)
+
+        current_params: dict[str, Any] = {
+            "city": city_slug,
+            "window": window_val,
+            "types": selected_types,
+        }
+        _render_picker_section(count, fmt, gen_kwargs, current_params)
+
+        draft_id = st.session_state.get("last_draft_id")
+        if draft_id:
+            draft = storage.get_draft(draft_id)
+            if draft:
+                st.divider()
+                _render_preview(draft)
+
+
+def _render_city_tab(
+    city_slug: str,
+    window_val: TimeWindow,
+    selected_types: list[str],
+    count: int,
+    fmt: str,
+    gen_kwargs: dict[str, Any],
+) -> None:
+    """Render one city's fetch → pick → generate → preview inside a tab."""
+    storage = _storage()
+    tab_key = f"tab_{city_slug}"
+
+    col_f, col_q = st.columns(2)
+    if col_f.button("Fetch Events", key=f"fetch_{tab_key}", use_container_width=True):
+        _do_fetch(city_slug, window_val, selected_types, count, state_key=tab_key)
+    if col_q.button("Quick Generate", key=f"quick_{tab_key}", use_container_width=True):
+        _run_generation(**gen_kwargs, preview_all_themes=False, state_key=tab_key)
+
+    current_params: dict[str, Any] = {
+        "city": city_slug,
+        "window": window_val,
+        "types": selected_types,
+    }
+    _render_picker_section(count, fmt, gen_kwargs, current_params, state_key=tab_key)
+
+    draft_id = st.session_state.get(f"last_draft_id_{tab_key}")
     if draft_id:
         draft = storage.get_draft(draft_id)
         if draft:
-            st.divider()
             _render_preview(draft)
+
+
+def _batch_generate_all(cities: list[str], gen_kwargs: dict[str, Any]) -> None:
+    """Generate a video for each city using the top events (no manual picking)."""
+    status = st.status(f"Batch generating for {len(cities)} cities…", expanded=True)
+    for city_slug in cities:
+        status.write(f"Generating for {city_slug}…")
+        try:
+            city_kwargs = {**gen_kwargs, "city_slug": city_slug}
+            draft = pipeline.run(**city_kwargs)
+            st.session_state[f"last_draft_id_tab_{city_slug}"] = draft.id
+            status.write(f"  ✅ {city_slug} done")
+        except pipeline.PipelineError as exc:
+            status.write(f"  ⚠️ {city_slug}: {exc}")
+        except Exception as exc:
+            status.write(f"  ❌ {city_slug}: {exc}")
+    status.update(label="Batch complete.", state="complete")
+    st.rerun()
 
 
 _CANDIDATE_POOL_SIZE = 30
@@ -363,14 +450,16 @@ def _do_fetch(
     selected_types: list[str],
     count: int,
     *,
-    settings: object,
+    settings: object = None,
+    state_key: str = "",
 ) -> None:
-    """Fetch a candidate pool and store in session state."""
+    """Fetch a candidate pool and store in session state (namespaced by state_key)."""
     from events_gen.registry import get_city, load_event_types
     from events_gen.settings import get_settings
     from events_gen.sources import aggregator
     from events_gen.timewindow import compute_window
 
+    prefix = f"{state_key}_" if state_key else ""
     s = get_settings()
     city = get_city(city_slug, s)
     all_types = load_event_types(s)
@@ -378,10 +467,10 @@ def _do_fetch(
     types = [t for t in all_types if t.slug in wanted] if wanted else []
     date_range = compute_window(window_val, city.timezone)
     candidates = aggregator.fetch(city, date_range, types, count=_CANDIDATE_POOL_SIZE, settings=s)
-    st.session_state["m10_candidates"] = [e.model_dump(mode="json") for e in candidates]
-    st.session_state["m10_selected_ids"] = {e.id for e in candidates[:count]}
-    st.session_state["m10_sort_key"] = "rank"
-    st.session_state["m10_fetch_params"] = {
+    st.session_state[f"{prefix}m10_candidates"] = [e.model_dump(mode="json") for e in candidates]
+    st.session_state[f"{prefix}m10_selected_ids"] = {e.id for e in candidates[:count]}
+    st.session_state[f"{prefix}m10_sort_key"] = "rank"
+    st.session_state[f"{prefix}m10_fetch_params"] = {
         "city": city_slug,
         "window": window_val,
         "types": selected_types,
@@ -394,8 +483,9 @@ def _do_fetch(
 def _render_picker_section(
     count: int,
     fmt_name: str,
-    gen_kwargs: dict[str, object],
+    gen_kwargs: dict[str, Any],
     current_params: dict[str, Any],
+    state_key: str = "",
 ) -> None:
     """Render the interactive event picker + live preview + Generate button."""
     from events_gen.models import Event as _Event
@@ -407,11 +497,12 @@ def _render_picker_section(
         sort_candidates,
     )
 
-    raw = st.session_state.get("m10_candidates")
+    prefix = f"{state_key}_" if state_key else ""
+    raw = st.session_state.get(f"{prefix}m10_candidates")
     if not raw:
         return
 
-    fetch_params = st.session_state.get("m10_fetch_params")
+    fetch_params = st.session_state.get(f"{prefix}m10_fetch_params")
     if is_fetch_stale(fetch_params, current_params):
         st.info("Controls changed since last fetch. Click **Fetch Events** to refresh.")
 
@@ -421,30 +512,30 @@ def _render_picker_section(
     # Sort control
     sort_options = {"Popularity": "rank", "Date": "date", "Price": "price", "Name": "name"}
     sort_label = st.radio(
-        "Sort by", list(sort_options.keys()), horizontal=True, key="m10_sort_radio"
+        "Sort by", list(sort_options.keys()), horizontal=True, key=f"{prefix}m10_sort_radio"
     )
     sort_key = sort_options[sort_label]
 
     candidates = sort_candidates([_Event.model_validate(e) for e in raw], sort_key)
-    selected_ids: set[str] = st.session_state.get("m10_selected_ids", set())
+    selected_ids: set[str] = st.session_state.get(f"{prefix}m10_selected_ids", set())
 
     # Action buttons
     col_top, col_all, col_clear = st.columns(3)
-    if col_top.button(f"Select top {count}", use_container_width=True):
-        st.session_state["m10_selected_ids"] = select_top_n(candidates, count)
+    if col_top.button(f"Select top {count}", key=f"{prefix}top_n", use_container_width=True):
+        st.session_state[f"{prefix}m10_selected_ids"] = select_top_n(candidates, count)
         st.rerun()
-    if col_all.button("Select all", use_container_width=True):
-        st.session_state["m10_selected_ids"] = {e.id for e in candidates}
+    if col_all.button("Select all", key=f"{prefix}sel_all", use_container_width=True):
+        st.session_state[f"{prefix}m10_selected_ids"] = {e.id for e in candidates}
         st.rerun()
-    if col_clear.button("Clear all", use_container_width=True):
-        st.session_state["m10_selected_ids"] = set()
+    if col_clear.button("Clear all", key=f"{prefix}clr_all", use_container_width=True):
+        st.session_state[f"{prefix}m10_selected_ids"] = set()
         st.rerun()
 
     # Picker grid
     new_selected: set[str] = set()
     for ev in candidates:
         cols = st.columns([0.5, 4, 2, 2, 2])
-        checked = cols[0].checkbox("", value=(ev.id in selected_ids), key=f"ev_{ev.id}")
+        checked = cols[0].checkbox("", value=(ev.id in selected_ids), key=f"{prefix}ev_{ev.id}")
         if checked:
             new_selected.add(ev.id)
         cols[1].markdown(f"**{ev.title}**" + (f"  \n_{ev.event_type}_" if ev.event_type else ""))
@@ -458,7 +549,7 @@ def _render_picker_section(
                 price += f"–{cur}{ev.price_max:.0f}"
         cols[4].caption(price or "—")
 
-    st.session_state["m10_selected_ids"] = new_selected
+    st.session_state[f"{prefix}m10_selected_ids"] = new_selected
 
     # Live preview strip
     n = len(new_selected)
@@ -480,8 +571,10 @@ def _render_picker_section(
     # Generate + Preview buttons (only when selection is non-empty)
     if n > 0:
         col_g, col_p = st.columns(2)
-        gen_clicked = col_g.button("Generate Video", type="primary", use_container_width=True)
-        prev_clicked = col_p.button("Preview themes", use_container_width=True)
+        gen_clicked = col_g.button(
+            "Generate Video", type="primary", key=f"{prefix}gen", use_container_width=True
+        )
+        prev_clicked = col_p.button("Preview themes", key=f"{prefix}prev", use_container_width=True)
         if gen_clicked or prev_clicked:
             selected_events = [e for e in candidates if e.id in new_selected]
             _run_generation(
@@ -504,15 +597,19 @@ def _apply_preset(preset: CityPreset) -> None:
     }
 
 
-def _run_generation(*, preview_all_themes: bool = False, **kwargs: object) -> None:
+def _run_generation(
+    *, preview_all_themes: bool = False, state_key: str = "", **kwargs: Any
+) -> None:
     status = st.status("Generating…", expanded=True)
 
     def progress(msg: str) -> None:
         status.write(msg)
 
     try:
-        draft = pipeline.run(progress=progress, **kwargs)  # type: ignore[arg-type]
+        draft = pipeline.run(progress=progress, **kwargs)
         st.session_state["last_draft_id"] = draft.id
+        if state_key:
+            st.session_state[f"last_draft_id_{state_key}"] = draft.id
         status.update(label="Draft ready.", state="complete")
     except pipeline.PipelineError as exc:
         status.update(label="No events found.", state="error")

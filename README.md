@@ -404,6 +404,23 @@ container from a **public video URL**, then publish it. So you need:
 Failure is isolated per destination: if one platform fails, the other still
 publishes and the draft is marked `failed` with the error recorded.
 
+#### Per-city destinations (M13)
+
+Each city can have its own YouTube channel(s) and/or Instagram account. A single
+city can target **multiple** YouTube channels. Credentials live under
+`secrets/<dest_id>/` (gitignored). When no per-city destinations are configured,
+the global `.env` credentials are used — backward compatible.
+
+```python
+from events_gen.models import Destination, Platform
+from events_gen.publish import publish_draft
+
+dest = Destination(city_slug="nyc", label="NYC Main", platform=Platform.YOUTUBE,
+                   youtube_client_secrets_path="secrets/nyc/client_secret.json",
+                   youtube_token_path="secrets/nyc/token.json")
+publish_draft(draft, destinations=[dest])  # publishes to NYC's own channel
+```
+
 ### M7 — Automation & scheduling (optional, off by default)
 
 Schedules make the app run itself on a cadence per city. Nothing is scheduled

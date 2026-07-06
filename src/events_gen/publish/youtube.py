@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
-from ..models import Platform, PostDraft, PublishResult
+from ..models import Destination, Platform, PostDraft, PublishResult
 from ..settings import Settings, get_settings
 from .base import Publisher, PublishError, _validate_publishable, build_description
 
@@ -54,15 +55,29 @@ class YouTubePublisher(Publisher):
     def __init__(
         self,
         *,
+        destination: Destination | None = None,
         settings: Settings | None = None,
         privacy_status: str = "private",
     ) -> None:
         self.settings = settings or get_settings()
+        self.destination = destination
         self.privacy_status = privacy_status
+        # Per-destination credentials override global settings.
+        if destination and destination.youtube_client_secrets_path:
+            from ..settings import REPO_ROOT
+
+            self._secrets_file: Path | None = REPO_ROOT / destination.youtube_client_secrets_path
+            self._token_file: Path | None = (
+                REPO_ROOT / destination.youtube_token_path
+                if destination.youtube_token_path
+                else None
+            )
+        else:
+            self._secrets_file = self.settings.youtube_client_secrets_file
+            self._token_file = self.settings.youtube_token_file
 
     def is_configured(self) -> bool:
-        secrets = self.settings.youtube_client_secrets_file
-        return bool(secrets and secrets.exists())
+        return bool(self._secrets_file and self._secrets_file.exists())
 
     def publish(self, draft: PostDraft, *, dry_run: bool = False) -> PublishResult:
         video_path = _validate_publishable(draft)
@@ -117,7 +132,7 @@ class YouTubePublisher(Publisher):
         from google_auth_oauthlib.flow import InstalledAppFlow
         from googleapiclient.discovery import build
 
-        token_file = self.settings.youtube_token_file
+        token_file = self._token_file
         creds: Credentials | None = None
         if token_file and token_file.exists():
             creds = Credentials.from_authorized_user_file(str(token_file), _SCOPES)
@@ -126,9 +141,7 @@ class YouTubePublisher(Publisher):
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             elif not creds or not creds.valid:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    str(self.settings.youtube_client_secrets_file), _SCOPES
-                )
+                flow = InstalledAppFlow.from_client_secrets_file(str(self._secrets_file), _SCOPES)
                 creds = flow.run_local_server(port=0)
                 if token_file:
                     token_file.parent.mkdir(parents=True, exist_ok=True)

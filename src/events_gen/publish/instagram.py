@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 
 import httpx
 
-from ..models import Platform, PostDraft, PublishResult
+from ..models import Destination, Platform, PostDraft, PublishResult
 from ..settings import Settings, get_settings
 from ._http import request_with_retry
 from .base import Publisher, PublishError, _validate_publishable, build_description
@@ -42,6 +42,7 @@ class InstagramPublisher(Publisher):
     def __init__(
         self,
         *,
+        destination: Destination | None = None,
         settings: Settings | None = None,
         host: VideoHost | None = None,
         client: httpx.Client | None = None,
@@ -49,15 +50,21 @@ class InstagramPublisher(Publisher):
         max_polls: int = 60,
     ) -> None:
         self.settings = settings or get_settings()
+        self.destination = destination
         self.host = host or VideoHost(self.settings)
         self._client = client
         self.poll_interval = poll_interval
         self.max_polls = max_polls
+        # Per-destination credentials override global settings.
+        if destination and destination.instagram_access_token:
+            self._access_token = destination.instagram_access_token
+            self._account_id = destination.instagram_business_account_id or ""
+        else:
+            self._access_token = self.settings.instagram_access_token or ""
+            self._account_id = self.settings.instagram_business_account_id or ""
 
     def is_configured(self) -> bool:
-        return bool(
-            self.settings.instagram_access_token and self.settings.instagram_business_account_id
-        )
+        return bool(self._access_token and self._account_id)
 
     def publish(self, draft: PostDraft, *, dry_run: bool = False) -> PublishResult:
         video_path = _validate_publishable(draft)
@@ -104,11 +111,11 @@ class InstagramPublisher(Publisher):
 
     @property
     def _account(self) -> str:
-        return self.settings.instagram_business_account_id or ""
+        return self._account_id
 
     @property
     def _token(self) -> str:
-        return self.settings.instagram_access_token or ""
+        return self._access_token
 
     def _create_container(self, client: httpx.Client, video_url: str, caption: str) -> str:
         resp = request_with_retry(
