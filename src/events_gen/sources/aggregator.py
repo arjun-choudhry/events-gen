@@ -6,7 +6,8 @@ The aggregator is the single entry point the pipeline uses for discovery:
 
 It runs each configured source via :meth:`EventSource.safe_fetch` (so one
 failing source never breaks the run), filters to the date window, dedupes across
-sources, ranks, and returns the top ``count``.
+sources, ranks by **popularity**, and returns the top ``count`` **unique**
+events (a show recurring on several nights fills only one slot).
 
 Source selection: when real API keys are present those sources are used; the
 :class:`MockSource` is included only when *no* real source is configured, so
@@ -49,25 +50,45 @@ def default_sources(settings: Settings | None = None) -> list[EventSource]:
 
 
 def _rank(event: Event, window: DateRange) -> float:
-    """Score an event for ordering. Higher is better.
+    """Score an event by **popularity**. Higher is better.
 
-    Heuristics (sooner + richer metadata rank higher):
-      - closer to the window start scores higher (favor imminent events)
-      - having an image, venue, and description each add a small bonus
-      - a source-provided rank_score (e.g. mock) is added directly
+    Event APIs don't expose a raw popularity number, so we approximate it from
+    the signals they do provide — bigger/more-promoted events tend to have a
+    promo image, ticket pricing, and complete metadata:
+
+      - promo image present (promoted events have artwork)   → strong signal
+      - ticket price (higher max price ~ bigger event)        → scaled, capped
+      - venue / description / url present (completeness)      → small bonuses
+      - source-provided ``rank_score`` (e.g. mock/relevance)  → added directly
+      - imminence is only a minor tiebreaker, not a driver
+
+    Scores are not normalized to any range; they're only used for relative
+    ordering within a single fetch.
     """
-    span = max((window.end - window.start).total_seconds(), 1.0)
-    time_to_event = max((event.start - window.start).total_seconds(), 0.0)
-    recency = 1.0 - min(time_to_event / span, 1.0)  # 1.0 = imminent, 0.0 = window end
-
-    score = recency * 10.0
+    score = 0.0
     if event.image_url:
-        score += 2.0
+        score += 3.0
     if event.venue:
         score += 1.0
     if event.description:
+        score += 1.0
+    if event.url:
         score += 0.5
+
+    # Ticket price as a popularity proxy: pricier headline events rank higher,
+    # capped so a single expensive ticket can't dominate.
+    price = event.price_max if event.price_max is not None else event.price_min
+    if price is not None:
+        score += min(price / 50.0, 5.0)
+
     score += event.rank_score
+
+    # Imminence: small tiebreaker so, among equally-popular events, sooner wins.
+    span = max((window.end - window.start).total_seconds(), 1.0)
+    time_to_event = max((event.start - window.start).total_seconds(), 0.0)
+    recency = 1.0 - min(time_to_event / span, 1.0)  # 1.0 = imminent, 0.0 = window end
+    score += recency  # weight 1.0 (was 10.0 — no longer the primary driver)
+
     return score
 
 
@@ -99,9 +120,10 @@ def fetch(
     count: int,
     *,
     sources: list[EventSource] | None = None,
+    settings: Settings | None = None,
 ) -> list[Event]:
     """Discover events: run sources, filter, dedupe, rank, and take top ``count``."""
-    sources = sources if sources is not None else default_sources()
+    sources = sources if sources is not None else default_sources(settings)
 
     collected: list[Event] = []
     for source in sources:
@@ -110,17 +132,43 @@ def fetch(
     # Keep only events inside the window (sources may over-return).
     in_window = [e for e in collected if window.contains(e.start)]
 
+    # Collapse exact cross-source duplicates (title+day+venue), then rank by
+    # popularity (highest first).
     deduped = dedupe(in_window)
     deduped.sort(key=lambda e: _rank(e, window), reverse=True)
 
-    top = deduped[: max(count, 0)]
-    for event in top:
+    # Select the top ``count`` *unique* events. Uniqueness here is day-insensitive
+    # (title+venue) so a run/residency of the same show on several nights fills
+    # only one slot — the highest-ranked instance, since the list is pre-sorted.
+    top: list[Event] = []
+    seen: set[str] = set()
+    limit = max(count, 0)
+    for event in deduped:
+        if len(top) >= limit:
+            break
+        key = _uniqueness_key(event)
+        if key in seen:
+            continue
+        seen.add(key)
         event.rank_score = _rank(event, window)
+        top.append(event)
+
     logger.info(
-        "aggregated %d raw -> %d in-window -> %d deduped -> top %d",
+        "aggregated %d raw -> %d in-window -> %d deduped -> top %d unique",
         len(collected),
         len(in_window),
         len(deduped),
         len(top),
     )
     return top
+
+
+def _uniqueness_key(event: Event) -> str:
+    """Day-insensitive identity for top-N selection: title + venue.
+
+    Distinct from :meth:`Event.dedupe_key` (which includes the day) so that the
+    same show recurring on multiple nights occupies only one slot in the result.
+    """
+    title = event.title.strip().lower()
+    venue = (event.venue or "").strip().lower()
+    return f"{title}|{venue}"

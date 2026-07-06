@@ -120,6 +120,13 @@ class PostContent(BaseModel):
     hashtags: list[str] = Field(default_factory=list)
     background_image_path: str | None = None
     music_path: str | None = None
+    # Identifier of the auto-selected music track (e.g. "jamendo:12345"), used to
+    # avoid repeating tracks across recent posts. None for uploads/local defaults.
+    music_track_id: str | None = None
+    # Optional per-event venue/place backgrounds ("smart backgrounds"), keyed by
+    # Event.id. The renderer uses these for each event's card, falling back to
+    # ``background_image_path`` when an event has no entry.
+    event_backgrounds: dict[str, str] = Field(default_factory=dict)
 
 
 class PublishResult(BaseModel):

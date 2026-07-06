@@ -38,6 +38,15 @@ def _pillow_to_numpy(img: Image.Image) -> np.ndarray:
     return np.array(img.convert("RGB"))
 
 
+def _load_background(path: str | None, size: tuple[int, int]) -> np.ndarray:
+    """Load a background image to a numpy array at ``size``, or a solid fallback."""
+    if path and Path(path).exists():
+        img = Image.open(path).convert("RGB").resize(size)
+    else:
+        img = Image.new("RGB", size, (30, 30, 40))
+    return _pillow_to_numpy(img)
+
+
 def _make_title_card(content: PostContent, fmt: VideoFormat) -> Image.Image:
     """Render a title intro card (city name + post title)."""
     from PIL import ImageDraw, ImageFont
@@ -136,13 +145,23 @@ def render_video(
         fmt.height,
     )
 
-    # Background clip
-    if content.background_image_path and Path(content.background_image_path).exists():
-        bg_img = Image.open(content.background_image_path).convert("RGB").resize(fmt.size)
-    else:
-        bg_img = Image.new("RGB", fmt.size, (30, 30, 40))
-    bg_arr = _pillow_to_numpy(bg_img)
-    bg_clip = ImageClip(bg_arr).with_duration(total_dur)
+    # Base background clip spanning the whole video (used for intro/outro and as
+    # the fallback for any event without a smart background).
+    base_bg_arr = _load_background(content.background_image_path, fmt.size)
+    layers: list[ImageClip] = [ImageClip(base_bg_arr).with_duration(total_dur)]
+
+    # Per-event background segments (smart backgrounds), timed to each card.
+    for i, event in enumerate(events):
+        event_bg = content.event_backgrounds.get(event.id)
+        if event_bg and Path(event_bg).exists():
+            seg_arr = _load_background(event_bg, fmt.size)
+            start_t = intro_dur + i * card_dur
+            layers.append(
+                ImageClip(seg_arr)
+                .with_duration(card_dur)
+                .with_start(start_t)
+                .with_effects([FadeIn(fade_duration), FadeOut(fade_duration)])
+            )
 
     overlays: list[ImageClip] = []
 
@@ -171,8 +190,8 @@ def render_video(
         )
     )
 
-    # Composite
-    video = CompositeVideoClip([bg_clip] + overlays, size=fmt.size)
+    # Composite: base bg → per-event bg segments → card/text overlays.
+    video = CompositeVideoClip(layers + overlays, size=fmt.size)
 
     # Music
     if content.music_path and Path(content.music_path).exists():

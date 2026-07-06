@@ -1,9 +1,16 @@
-"""Caption generation with Anthropic Claude (template fallback when no key).
+"""Caption generation via a pluggable LLM (template fallback when no key).
 
 Given a city and its selected events, produce a post ``title``, ``caption``, and
-``hashtags``. When ``ANTHROPIC_API_KEY`` is configured we ask Claude for catchy,
-on-brand copy; otherwise a deterministic template fallback keeps the pipeline
-runnable with no credentials (matching the keyless-first design of M2).
+``hashtags``. Two LLM providers are supported, both with structured output:
+
+- **Gemini** (``GEMINI_API_KEY``) — free tier, no credit card; the default when
+  its key is present.
+- **Anthropic Claude** (``ANTHROPIC_API_KEY``) — paid.
+
+``EG_CAPTION_PROVIDER`` selects one explicitly (``gemini`` / ``anthropic``);
+``auto`` (default) picks whichever key is configured, preferring the free Gemini.
+With no key — or on any LLM error — a deterministic template fallback keeps the
+pipeline runnable (matching the keyless-first design of M2).
 """
 
 from __future__ import annotations
@@ -73,6 +80,60 @@ def _build_prompt(city: City, events: list[Event], window: str) -> str:
     return "\n".join(lines)
 
 
+def _select_provider(settings: Settings) -> str:
+    """Resolve the effective caption provider from config + available keys."""
+    choice = (settings.caption_provider or "auto").lower()
+    if choice == "gemini":
+        return "gemini" if settings.gemini_api_key else "template"
+    if choice == "anthropic":
+        return "anthropic" if settings.anthropic_api_key else "template"
+    # auto: prefer the free provider, then paid, then template.
+    if settings.gemini_api_key:
+        return "gemini"
+    if settings.anthropic_api_key:
+        return "anthropic"
+    return "template"
+
+
+def _gemini_captions(
+    city: City, events: list[Event], window: str, settings: Settings
+) -> CaptionResult:
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    response = client.models.generate_content(
+        model=settings.gemini_model,
+        contents=_build_prompt(city, events, window),
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=CaptionResult,
+        ),
+    )
+    result = response.parsed
+    if not isinstance(result, CaptionResult):
+        raise ValueError("no parsed output from Gemini")
+    return result
+
+
+def _anthropic_captions(
+    city: City, events: list[Event], window: str, settings: Settings
+) -> CaptionResult:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    response = client.messages.parse(
+        model=settings.claude_model,
+        max_tokens=1024,
+        messages=[{"role": "user", "content": _build_prompt(city, events, window)}],
+        output_format=CaptionResult,
+    )
+    result = response.parsed_output
+    if result is None:
+        raise ValueError("no parsed output from Claude")
+    return result
+
+
 def generate_captions(
     city: City,
     events: list[Event],
@@ -82,24 +143,15 @@ def generate_captions(
 ) -> CaptionResult:
     """Generate captions for ``events``; falls back to a template with no API key."""
     settings = settings or get_settings()
-    if not settings.anthropic_api_key:
-        logger.info("no ANTHROPIC_API_KEY; using template captions")
+    provider = _select_provider(settings)
+    if provider == "template":
+        logger.info("no caption LLM key configured; using template captions")
         return _template_captions(city, events, window)
 
     try:
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        response = client.messages.parse(
-            model=settings.claude_model,
-            max_tokens=1024,
-            messages=[{"role": "user", "content": _build_prompt(city, events, window)}],
-            output_format=CaptionResult,
-        )
-        result = response.parsed_output
-        if result is None:
-            raise ValueError("no parsed output from Claude")
-        return result
+        if provider == "gemini":
+            return _gemini_captions(city, events, window, settings)
+        return _anthropic_captions(city, events, window, settings)
     except Exception:  # noqa: BLE001 - degrade to template on any LLM failure
-        logger.exception("caption generation via Claude failed; using template fallback")
+        logger.exception("caption generation via %s failed; using template fallback", provider)
         return _template_captions(city, events, window)

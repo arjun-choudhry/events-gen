@@ -50,6 +50,9 @@ def run(
     render_format: str = "reel",
     image_upload: Path | None = None,
     music_upload: Path | None = None,
+    smart_backgrounds: bool = False,
+    smart_music: bool = True,
+    auto_music: bool = False,
     targets: list[Platform] | None = None,
     custom_start: datetime | None = None,
     custom_end: datetime | None = None,
@@ -75,7 +78,7 @@ def run(
     # 1. Fetch events
     progress(f"Discovering events in {city.name}…")
     date_range = compute_window(window, city.timezone, start=custom_start, end=custom_end)
-    events = aggregator.fetch(city, date_range, types, count=count)
+    events = aggregator.fetch(city, date_range, types, count=count, settings=settings)
     if not events:
         raise PipelineError(f"no events found for {city.name} in the {window.value} window")
     progress(f"Found {len(events)} event(s).")
@@ -101,6 +104,12 @@ def run(
         draft_id=draft.id,
         image_upload=image_upload,
         music_upload=music_upload,
+        smart_backgrounds=smart_backgrounds,
+        smart_music=smart_music,
+        auto_music=auto_music,
+        music_exclude_ids=(
+            storage.recent_music_track_ids(settings.music_history_size) if auto_music else []
+        ),
         settings=settings,
     )
     draft.content = content

@@ -92,12 +92,21 @@ def page_create() -> None:
 
     defaults = st.session_state.get("preset_defaults", {})
 
-    # R1: city
+    # R1: city — type-to-search. Streamlit filters on the displayed label, so we
+    # include name + country so typing either narrows the list.
+    def _city_label(slug: str) -> str:
+        c = city_by_slug[slug]
+        return f"{c.name}, {c.country}"
+
     city_slugs = [c.slug for c in cities]
     default_city = defaults.get("city_slug", city_slugs[0])
     city_idx = city_slugs.index(default_city) if default_city in city_slugs else 0
     city_slug = st.selectbox(
-        "City (R1)", city_slugs, index=city_idx, format_func=lambda s: city_by_slug[s].name
+        "City (R1)",
+        city_slugs,
+        index=city_idx,
+        format_func=_city_label,
+        placeholder="Type to search a city…",
     )
 
     # R2: window
@@ -137,6 +146,38 @@ def page_create() -> None:
     )
     music_upload = col2.file_uploader("Music track (R6) — optional", type=["mp3", "wav", "m4a"])
 
+    # Smart features (per-event)
+    smart_bg = st.toggle(
+        "🖼️ Smart backgrounds — use each event's venue/place image",
+        value=False,
+        help=(
+            "Per event: use the event's own photo, else search Unsplash for the "
+            "venue/city (needs UNSPLASH_ACCESS_KEY), else the shared background. "
+            "Ignored when you upload a background above."
+        ),
+        disabled=image_upload is not None,
+    )
+    smart_music = st.toggle(
+        "🎵 Smart music — pick a track from the events' type",
+        value=False,
+        help=(
+            "Chooses a default track based on the dominant event type "
+            "(needs audio files under assets/music/). Ignored when you upload music."
+        ),
+        disabled=music_upload is not None,
+    )
+    auto_music = st.toggle(
+        "🎧 Auto music — trending royalty-free instrumental (Jamendo), non-repetitive",
+        value=False,
+        help=(
+            "Auto-picks a popularity-ranked, royalty-free instrumental from Jamendo "
+            "(needs JAMENDO_CLIENT_ID), avoiding tracks used in your recent posts. "
+            "Note: commercial/Billboard audio is intentionally NOT used — it would get "
+            "your posts muted or struck for copyright. Ignored when you upload music."
+        ),
+        disabled=music_upload is not None,
+    )
+
     # R8: destinations
     targets = st.multiselect(
         "Destinations (R8)",
@@ -172,6 +213,9 @@ def page_create() -> None:
             render_format=fmt,
             image_upload=_save_upload(image_upload, ".jpg"),
             music_upload=_save_upload(music_upload, ".mp3"),
+            smart_backgrounds=smart_bg,
+            smart_music=smart_music,
+            auto_music=auto_music,
             targets=targets,
         )
 

@@ -180,9 +180,11 @@ python -m events_gen.cli generate-content tokyo --window week --types music arts
 This prints the title/caption/hashtags and writes a 1080×1920 background under
 `data/output/`. Content sources:
 
-- **Captions** — Anthropic Claude when `ANTHROPIC_API_KEY` is set (model via
-  `EG_CLAUDE_MODEL`, default `claude-sonnet-5`); otherwise a deterministic
-  template. Set the key in `.env` to get LLM copy.
+- **Captions** — a pluggable LLM. Set `GEMINI_API_KEY` (free, no credit card)
+  or `ANTHROPIC_API_KEY` (paid) in `.env`. `EG_CAPTION_PROVIDER` (`auto` by
+  default) picks whichever key is present, preferring free Gemini; with neither,
+  a deterministic template is used. Models via `EG_GEMINI_MODEL`
+  (`gemini-2.0-flash`) / `EG_CLAUDE_MODEL` (`claude-sonnet-5`).
 - **Background image** — resolved by priority: your uploaded image → the city's
   default asset (`assets/images/<slug>/default.jpg`) → a generated image. The
   generator is `EG_IMAGE_PROVIDER` (`mock` by default; `ai` uses
@@ -190,6 +192,37 @@ This prints the title/caption/hashtags and writes a 1080×1920 background under
 - **Music** — resolved by priority: your uploaded track → the default track for
   the dominant event type (`assets/music/<type>/default.mp3`) → the city default
   → none (silent). Default tracks are royalty-free files you add under `assets/`.
+
+#### Smart features (per-event, toggle in the UI Create page)
+
+- **🖼️ Smart backgrounds** — instead of one shared background, each event card
+  shows a background of *where it's happening*, resolved in priority order:
+  1. the event's own promo image (from Ticketmaster/Eventbrite), else
+  2. an [Unsplash](https://unsplash.com/developers) search for the venue/city
+     (`UNSPLASH_ACCESS_KEY` — note: Unsplash apps stay rate-limited until
+     approved, so this may return nothing), else
+  3. an [Openverse](https://openverse.org) search — Creative-Commons images,
+     **no API key required**, so this works out of the box, else
+  4. the shared city background.
+
+  Ignored when you upload a background. Each fetch is best-effort — a miss falls
+  through to the next tier, never breaking the render.
+- **🎵 Smart music** — picks a default track based on the dominant event type
+  present. Off means silent unless you upload a track. Needs audio files under
+  `assets/music/<type>/default.mp3` (royalty-free; you supply them).
+- **🎧 Auto music** — auto-selects a **popularity-ranked, royalty-free
+  instrumental** from [Jamendo](https://devportal.jamendo.com) (`JAMENDO_CLIENT_ID`,
+  free, no card) and **rotates it** so it isn't reused across your last
+  `EG_MUSIC_HISTORY_SIZE` posts (default 5). Takes priority over the type/city
+  default, but an uploaded track always wins.
+  > ⚠️ **Why not Billboard / chart hits?** Commercial audio is copyrighted —
+  > auto-attaching it would get your videos **muted or struck** by YouTube
+  > Content ID / Instagram audio matching, and violates this project's
+  > royalty-free-only rule. Jamendo's popularity ranking is the legal analog to
+  > "trending music."
+
+Programmatically these are flags on `pipeline.run(...)`:
+`smart_backgrounds=True`, `smart_music=True`, `auto_music=True`.
 
 ### M4 — video rendering
 
@@ -338,7 +371,8 @@ the matching feature (see the per-feature sections above for details):
 
 | Feature | Env var(s) | Where to get it |
 |---|---|---|
-| Captions (Claude) | `ANTHROPIC_API_KEY` | console.anthropic.com |
+| Captions (Gemini, free) | `GEMINI_API_KEY` | aistudio.google.com/apikey |
+| Captions (Claude, paid) | `ANTHROPIC_API_KEY` | console.anthropic.com |
 | AI backgrounds | `EG_IMAGE_PROVIDER=ai`, `EG_IMAGE_API_KEY` | your chosen image provider |
 | Ticketmaster | `TICKETMASTER_API_KEY` | developer.ticketmaster.com |
 | Eventbrite | `EVENTBRITE_API_TOKEN` | eventbrite.com/platform/api |

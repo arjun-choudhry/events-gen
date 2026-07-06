@@ -155,6 +155,23 @@ class Storage:
             cur = conn.execute("DELETE FROM drafts WHERE id = ?", (draft_id,))
             return cur.rowcount > 0
 
+    def recent_music_track_ids(self, limit: int = 5) -> list[str]:
+        """Return the auto-selected music track ids from the most recent drafts.
+
+        Used for music anti-repetition — the caller excludes these when picking a
+        new auto-selected track.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload FROM drafts ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        ids: list[str] = []
+        for row in rows:
+            draft = PostDraft.model_validate_json(row["payload"])
+            if draft.content and draft.content.music_track_id:
+                ids.append(draft.content.music_track_id)
+        return ids
+
     # ── jobs ──
     def save_job(self, job: Job) -> Job:
         now = _utcnow()

@@ -70,6 +70,61 @@ def test_template_captions_are_deterministic(settings: Settings) -> None:
     assert a == b
 
 
+# ── caption provider selection ──
+
+
+def _settings_with(**overrides: str) -> Settings:
+    return Settings(_env_file=None, **overrides)  # type: ignore[arg-type]
+
+
+def test_select_provider_auto_prefers_gemini() -> None:
+    from events_gen.content.captions import _select_provider
+
+    s = _settings_with(GEMINI_API_KEY="g", ANTHROPIC_API_KEY="a")
+    assert _select_provider(s) == "gemini"
+
+
+def test_select_provider_auto_falls_back_to_anthropic() -> None:
+    from events_gen.content.captions import _select_provider
+
+    s = _settings_with(ANTHROPIC_API_KEY="a")
+    assert _select_provider(s) == "anthropic"
+
+
+def test_select_provider_auto_template_without_keys(settings: Settings) -> None:
+    from events_gen.content.captions import _select_provider
+
+    assert _select_provider(settings) == "template"
+
+
+def test_select_provider_explicit_gemini_without_key_is_template() -> None:
+    from events_gen.content.captions import _select_provider
+
+    # Explicitly requesting gemini but no key → template (not anthropic).
+    s = _settings_with(EG_CAPTION_PROVIDER="gemini", ANTHROPIC_API_KEY="a")
+    assert _select_provider(s) == "template"
+
+
+def test_select_provider_explicit_anthropic() -> None:
+    from events_gen.content.captions import _select_provider
+
+    s = _settings_with(EG_CAPTION_PROVIDER="anthropic", GEMINI_API_KEY="g", ANTHROPIC_API_KEY="a")
+    assert _select_provider(s) == "anthropic"
+
+
+def test_gemini_failure_falls_back_to_template(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A configured-but-broken Gemini call must degrade to the template, not raise.
+    import events_gen.content.captions as captions_mod
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(captions_mod, "_gemini_captions", boom)
+    s = _settings_with(GEMINI_API_KEY="g")
+    result = generate_captions(CITY, [_event("Big Show", "music")], "week", settings=s)
+    assert "Big Show" in result.caption  # template output
+
+
 # ── image providers ──
 
 
@@ -176,6 +231,32 @@ def test_resolve_music_uses_dominant_type_default(settings: Settings) -> None:
 def test_resolve_music_returns_none_when_nothing_available(settings: Settings) -> None:
     events = [_event("a", "music")]
     assert resolve_music(CITY, events, [MUSIC], settings=settings) is None
+
+
+def test_resolve_music_use_defaults_false_skips_defaults(settings: Settings) -> None:
+    # Smart music off: even with a default track on disk, nothing is chosen.
+    track = settings.assets_dir / "music" / "music" / "default.mp3"
+    track.parent.mkdir(parents=True, exist_ok=True)
+    track.write_bytes(b"fake")
+    events = [_event("a", "music")]
+    assert resolve_music(CITY, events, [MUSIC], use_defaults=False, settings=settings) is None
+    # But an explicit upload is still honored.
+
+
+def test_resolve_music_use_defaults_false_still_honors_upload(
+    settings: Settings, tmp_path: Path
+) -> None:
+    upload = tmp_path / "song.mp3"
+    upload.write_bytes(b"fake")
+    result = resolve_music(
+        CITY,
+        [_event("a", "music")],
+        [MUSIC],
+        upload_path=upload,
+        use_defaults=False,
+        settings=settings,
+    )
+    assert result == upload
 
 
 # ── builder ──

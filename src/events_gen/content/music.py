@@ -35,12 +35,17 @@ def resolve_music(
     event_types: list[EventType],
     *,
     upload_path: Path | None = None,
+    use_defaults: bool = True,
     settings: Settings | None = None,
 ) -> Path | None:
     """Resolve the music track for a post following the R6 override rule.
 
     Priority: user upload → default track for the dominant event type →
     city default track → None (silent). Returns an existing path or None.
+
+    ``use_defaults`` gates the "smart music" behavior: when False, only an
+    explicit upload is honored (no automatic type/city default) — the video is
+    silent unless the user provided a track.
     """
     settings = settings or get_settings()
 
@@ -49,6 +54,10 @@ def resolve_music(
             raise FileNotFoundError(f"uploaded music not found: {upload_path}")
         logger.info("using uploaded music %s", upload_path)
         return upload_path
+
+    if not use_defaults:
+        logger.info("smart music off and no upload; video will be silent")
+        return None
 
     dominant = _dominant_type(events)
     if dominant:

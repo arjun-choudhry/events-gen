@@ -35,7 +35,10 @@ class Settings(BaseSettings):
     """Typed application settings, populated from env / ``.env``."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Absolute path so ``.env`` loads regardless of the working directory the
+        # app is launched from (Streamlit, CLI, tests). A relative ".env" would
+        # only be found when the cwd happens to be the repo root.
+        env_file=REPO_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -48,12 +51,30 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="EG_LOG_LEVEL")
 
     # ── LLM (captions) ──
+    # Provider selection: "auto" (default) uses whichever key is present —
+    # Gemini first (free), then Anthropic; falls back to a template with neither.
+    caption_provider: str = Field(default="auto", alias="EG_CAPTION_PROVIDER")
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     claude_model: str = Field(default="claude-sonnet-5", alias="EG_CLAUDE_MODEL")
+    # Google Gemini — free API key from aistudio.google.com (no credit card).
+    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
+    gemini_model: str = Field(default="gemini-2.5-flash", alias="EG_GEMINI_MODEL")
 
     # ── Image generation ──
     image_provider: str = Field(default="mock", alias="EG_IMAGE_PROVIDER")
     image_api_key: str | None = Field(default=None, alias="EG_IMAGE_API_KEY")
+    # Unsplash — free API key from https://unsplash.com/developers (no card).
+    # Used for per-event venue/place backgrounds ("smart backgrounds").
+    unsplash_access_key: str | None = Field(default=None, alias="UNSPLASH_ACCESS_KEY")
+
+    # ── Music (auto-selection) ──
+    # Jamendo — free client id from https://devportal.jamendo.com (no card).
+    # Auto-picks popularity-ranked, royalty-free INSTRUMENTAL tracks. NOTE: this
+    # is the legal analog to "top charts" — Billboard/commercial audio is not used
+    # (it would trigger YouTube/Instagram copyright takedowns).
+    jamendo_client_id: str | None = Field(default=None, alias="JAMENDO_CLIENT_ID")
+    # Avoid reusing tracks from the last N drafts (anti-repetition window).
+    music_history_size: int = Field(default=5, alias="EG_MUSIC_HISTORY_SIZE")
 
     # ── Event sources ──
     ticketmaster_api_key: str | None = Field(default=None, alias="TICKETMASTER_API_KEY")
