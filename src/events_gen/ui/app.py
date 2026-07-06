@@ -212,12 +212,18 @@ def page_create() -> None:
         format_func=lambda p: p.value.capitalize(),
     )
 
-    col_gen, col_preview, col_save = st.columns([1, 1, 1])
-    generate = col_gen.button("Generate", type="primary", use_container_width=True)
-    preview_all = col_preview.button(
-        "Preview themes",
+    # ── Action buttons ──
+    col_fetch, col_quick, col_save = st.columns([1, 1, 1])
+    fetch_clicked = col_fetch.button(
+        "Fetch Events",
+        type="primary",
         use_container_width=True,
-        help="Generate the post, then render a preview for every theme so you can compare them.",
+        help="Fetch a pool of event candidates for the picker below.",
+    )
+    quick_gen = col_quick.button(
+        "Quick Generate",
+        use_container_width=True,
+        help="Skip the picker — generate directly using the top events.",
     )
     with col_save.popover("Save as preset", use_container_width=True):
         preset_name = st.text_input("Preset name")
@@ -237,23 +243,33 @@ def page_create() -> None:
             )
             st.success(f"Saved preset '{preset_name}'.")
 
-    if generate or preview_all:
-        _run_generation(
-            city_slug=city_slug,
-            window=window_val,
-            event_types=selected_types,
-            count=count,
-            render_format=fmt,
-            theme=theme,
-            intensity=intensity,
-            image_upload=_save_upload(image_upload, ".jpg"),
-            music_upload=_save_upload(music_upload, ".mp3"),
-            smart_backgrounds=smart_bg,
-            smart_music=smart_music,
-            auto_music=auto_music,
-            targets=targets,
-            preview_all_themes=preview_all,
-        )
+    # Shared generation kwargs (used by both picker-Generate and Quick Generate).
+    gen_kwargs: dict[str, object] = {
+        "city_slug": city_slug,
+        "window": window_val,
+        "event_types": selected_types,
+        "count": count,
+        "render_format": fmt,
+        "theme": theme,
+        "intensity": intensity,
+        "image_upload": _save_upload(image_upload, ".jpg"),
+        "music_upload": _save_upload(music_upload, ".mp3"),
+        "smart_backgrounds": smart_bg,
+        "smart_music": smart_music,
+        "auto_music": auto_music,
+        "targets": targets,
+    }
+
+    # ── Quick Generate (old flow, no picker) ──
+    if quick_gen:
+        _run_generation(**gen_kwargs, preview_all_themes=False)
+
+    # ── Fetch → Picker → Generate flow (M10) ──
+    if fetch_clicked:
+        _do_fetch(city_slug, window_val, selected_types, count, settings=None)
+
+    current_params = {"city": city_slug, "window": window_val, "types": selected_types}
+    _render_picker_section(count, fmt, gen_kwargs, current_params)
 
     # Show the just-generated draft's preview inline.
     draft_id = st.session_state.get("last_draft_id")
@@ -262,6 +278,143 @@ def page_create() -> None:
         if draft:
             st.divider()
             _render_preview(draft)
+
+
+_CANDIDATE_POOL_SIZE = 30
+
+
+def _do_fetch(
+    city_slug: str,
+    window_val: TimeWindow,
+    selected_types: list[str],
+    count: int,
+    *,
+    settings: object,
+) -> None:
+    """Fetch a candidate pool and store in session state."""
+    from events_gen.registry import get_city, load_event_types
+    from events_gen.settings import get_settings
+    from events_gen.sources import aggregator
+    from events_gen.timewindow import compute_window
+
+    s = get_settings()
+    city = get_city(city_slug, s)
+    all_types = load_event_types(s)
+    wanted = set(selected_types)
+    types = [t for t in all_types if t.slug in wanted] if wanted else []
+    date_range = compute_window(window_val, city.timezone)
+    candidates = aggregator.fetch(city, date_range, types, count=_CANDIDATE_POOL_SIZE, settings=s)
+    st.session_state["m10_candidates"] = [e.model_dump(mode="json") for e in candidates]
+    st.session_state["m10_selected_ids"] = {e.id for e in candidates[:count]}
+    st.session_state["m10_sort_key"] = "rank"
+    st.session_state["m10_fetch_params"] = {
+        "city": city_slug,
+        "window": window_val,
+        "types": selected_types,
+    }
+    if not candidates:
+        st.warning("No events found for these criteria.")
+    st.rerun()
+
+
+def _render_picker_section(
+    count: int,
+    fmt_name: str,
+    gen_kwargs: dict[str, object],
+    current_params: dict[str, Any],
+) -> None:
+    """Render the interactive event picker + live preview + Generate button."""
+    from events_gen.models import Event as _Event
+    from events_gen.render import get_format
+    from events_gen.ui.picker import (
+        estimate_duration,
+        is_fetch_stale,
+        select_top_n,
+        sort_candidates,
+    )
+
+    raw = st.session_state.get("m10_candidates")
+    if not raw:
+        return
+
+    fetch_params = st.session_state.get("m10_fetch_params")
+    if is_fetch_stale(fetch_params, current_params):
+        st.info("Controls changed since last fetch. Click **Fetch Events** to refresh.")
+
+    st.divider()
+    st.subheader("Event Picker")
+
+    # Sort control
+    sort_options = {"Popularity": "rank", "Date": "date", "Price": "price", "Name": "name"}
+    sort_label = st.radio(
+        "Sort by", list(sort_options.keys()), horizontal=True, key="m10_sort_radio"
+    )
+    sort_key = sort_options[sort_label]
+
+    candidates = sort_candidates([_Event.model_validate(e) for e in raw], sort_key)
+    selected_ids: set[str] = st.session_state.get("m10_selected_ids", set())
+
+    # Action buttons
+    col_top, col_all, col_clear = st.columns(3)
+    if col_top.button(f"Select top {count}", use_container_width=True):
+        st.session_state["m10_selected_ids"] = select_top_n(candidates, count)
+        st.rerun()
+    if col_all.button("Select all", use_container_width=True):
+        st.session_state["m10_selected_ids"] = {e.id for e in candidates}
+        st.rerun()
+    if col_clear.button("Clear all", use_container_width=True):
+        st.session_state["m10_selected_ids"] = set()
+        st.rerun()
+
+    # Picker grid
+    new_selected: set[str] = set()
+    for ev in candidates:
+        cols = st.columns([0.5, 4, 2, 2, 2])
+        checked = cols[0].checkbox("", value=(ev.id in selected_ids), key=f"ev_{ev.id}")
+        if checked:
+            new_selected.add(ev.id)
+        cols[1].markdown(f"**{ev.title}**" + (f"  \n_{ev.event_type}_" if ev.event_type else ""))
+        cols[2].caption(ev.start.strftime("%a %d %b %H:%M"))
+        cols[3].caption(ev.venue or "—")
+        price = ""
+        if ev.price_min is not None:
+            cur = ev.currency or "$"
+            price = f"{cur}{ev.price_min:.0f}"
+            if ev.price_max and ev.price_max != ev.price_min:
+                price += f"–{cur}{ev.price_max:.0f}"
+        cols[4].caption(price or "—")
+
+    st.session_state["m10_selected_ids"] = new_selected
+
+    # Live preview strip
+    n = len(new_selected)
+    if n > 0:
+        video_fmt = get_format(fmt_name)
+        dur = estimate_duration(n, video_fmt)
+        st.markdown(f"**{n} selected** — estimated video: ~{dur:.0f}s")
+        selected_evs = [e for e in candidates if e.id in new_selected]
+        thumb_cols = st.columns(min(n, 10))
+        for col, ev in zip(thumb_cols, selected_evs[:10], strict=False):
+            with col:
+                if ev.image_url:
+                    st.image(str(ev.image_url), width=70)
+                else:
+                    st.caption(ev.title[:15])
+    else:
+        st.info("Select at least one event to generate a video.")
+
+    # Generate + Preview buttons (only when selection is non-empty)
+    if n > 0:
+        col_g, col_p = st.columns(2)
+        gen_clicked = col_g.button("Generate Video", type="primary", use_container_width=True)
+        prev_clicked = col_p.button("Preview themes", use_container_width=True)
+        if gen_clicked or prev_clicked:
+            selected_events = [e for e in candidates if e.id in new_selected]
+            _run_generation(
+                **gen_kwargs,
+                events=selected_events,
+                preview_all_themes=prev_clicked,
+            )
 
 
 def _apply_preset(preset: CityPreset) -> None:

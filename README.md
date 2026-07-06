@@ -302,14 +302,21 @@ Then, from the **Create** page:
 2. Optionally upload a **background image** (R5) or **music track** (R6) —
    otherwise city/type defaults (or a generated placeholder) are used.
 3. Choose **destinations** — YouTube / Instagram / both (R8).
-4. Click **Generate** — a progress panel shows fetch → captions → render, then
-   the **preview** appears: an embedded video player plus editable
-   title/caption/hashtags (R7). Click **Save edits** to persist changes.
-5. **Compare themes** — once the caption is finalized, click **Render theme
-   previews** to render one video *per theme* (reusing the same content/music, so
-   it's quick). They appear in a gallery; click **Use this theme** on the one you
-   like to make it the draft's final render before publishing.
-6. **Save as preset** stores the current controls for one-click reuse (R10).
+4. Click **Fetch Events** — discovers a pool of ~30 candidates and opens the
+   **interactive event picker** below.
+5. **Pick events** — the picker shows all candidates (title, date, venue, price)
+   with checkboxes. Sort by Popularity / Date / Price / Name. Use "Select top N"
+   for a quick default, or hand-pick exactly what goes in the video. A live
+   summary strip shows the selected count + estimated duration, updating as you
+   toggle.
+6. Click **Generate Video** (or **Preview themes**) — renders only the events you
+   selected. The **preview** appears: video player + editable title/caption/hashtags
+   (R7). Click **Save edits** to persist changes.
+7. **Compare themes** — render one video per theme and pick the best one.
+8. **Save as preset** stores the current controls for one-click reuse (R10).
+
+   > **Quick Generate** (next to Fetch) skips the picker and runs the old direct
+   > flow — useful when you trust the auto-ranking and don't need to curate.
 
 Other pages:
 - **Drafts** — every saved `PostDraft`: re-open, preview, edit caption, delete.

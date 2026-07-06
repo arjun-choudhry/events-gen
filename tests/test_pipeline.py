@@ -111,3 +111,41 @@ class TestPipelineRun:
 
         with pytest.raises(RegistryError):
             pipeline.run(city_slug="atlantis", storage=Storage(settings.db_path), settings=settings)
+
+    def test_preselected_events_skips_fetch(self, settings: Settings) -> None:
+        from datetime import UTC, datetime
+
+        from events_gen.models import Event
+
+        hand_picked = [
+            Event(
+                source="manual",
+                title="My Event",
+                start=datetime(2026, 7, 10, 20, tzinfo=UTC),
+                city_slug="tokyo",
+            ),
+            Event(
+                source="manual",
+                title="Another",
+                start=datetime(2026, 7, 11, 20, tzinfo=UTC),
+                city_slug="tokyo",
+            ),
+        ]
+        draft = pipeline.run(
+            city_slug="tokyo",
+            events=hand_picked,
+            storage=Storage(settings.db_path),
+            settings=settings,
+        )
+        assert len(draft.events) == 2
+        assert draft.events[0].title == "My Event"
+        assert draft.events[1].title == "Another"
+
+    def test_empty_preselected_events_raises(self, settings: Settings) -> None:
+        with pytest.raises(pipeline.PipelineError, match="no events selected"):
+            pipeline.run(
+                city_slug="tokyo",
+                events=[],
+                storage=Storage(settings.db_path),
+                settings=settings,
+            )

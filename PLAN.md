@@ -302,16 +302,18 @@ its **deliverable**, and **acceptance criteria** (how we know it's done).
 ### M10 — Better event ranking + interactive manual picker
 **Goal:** stop surfacing boring events; give the operator full control over which events appear, with a **live-updating preview** as events are toggled. *(addresses "curated events are boring")*
 
-- [ ] **M10.1** Fetch-first flow — split the Create page into two phases: (1) **Fetch** (city/window/types/count) → populates a candidate pool, stored on `PostDraft.candidate_events`; (2) **Generate** uses only the selected subset.
-- [ ] **M10.2** **Interactive event picker** — a full-width table/grid of all fetched candidates showing: ☑ checkbox, thumbnail (event promo image), title, date, venue, price, source badge. Sortable columns. Checked events are the ones that make it into the video.
-- [ ] **M10.3** Live lightweight preview — as the user toggles events on/off, a **timeline strip** (horizontal row of card thumbnails in order) + a text summary ("5 selected, ~24s video") updates instantly below the picker. No full video render until Generate.
-- [ ] **M10.4** Sort-by control — buttons above the picker: "Popularity" (default) / "Date" / "Price ↓" / "Name A–Z". Clicking re-orders the grid.
+- [x] **M10.1** Fetch-first flow — Create page split into Fetch → Pick → Generate. Fetch calls `aggregator.fetch(..., count=30)` → stores candidates in session state → picker appears.
+- [x] **M10.2** **Interactive event picker** — grid of all candidates with ☑ checkbox, title+type, date, venue, price. "Select top N" / "Select all" / "Clear all" action buttons.
+- [x] **M10.3** Live lightweight preview — selected count + estimated duration + horizontal thumbnail strip (event images) updates on every toggle.
+- [x] **M10.4** Sort-by control — horizontal radio: Popularity / Date / Price / Name. Re-orders the grid instantly.
 - [ ] **M10.5** Better ranking signals from sources — Ticketmaster `attractions[0].upcomingEvents._total` (popularity proxy), SeatGeek `score` / `stats.listing_count`, PredictHQ `rank`/`phq_attendance`. Map each into `Event.rank_score`; the picker's default sort uses this.
 - [ ] **M10.6** Additional event sources (deferred M2.8) — SeatGeek, PredictHQ, Meetup. Each new source adds more candidates to the pool and brings its own popularity signal.
 - [ ] **M10.7** LLM "interestingness" scorer (optional toggle) — ask Gemini to rate each candidate's shareability (1–10) from its metadata. Cached per event id so it's not re-called. Adds to the composite `rank_score`. Keyless-degradable (off if no LLM key).
-- [ ] **M10.8** "Select top N" button — auto-checks the top N by the current sort, as a quick default if the operator doesn't want to hand-pick.
-- [ ] **M10.9** Tests — picker selection overrides auto top-N in the pipeline; sort orders match expectations; LLM scorer error degrades gracefully; new source signals affect order.
-- [ ] **M10.10** **Update README** — document the fetch→pick→generate flow, the picker UI, sort options, the LLM scorer, and new sources.
+- [x] **M10.8** "Select top N" button — auto-checks the first N by current sort. Also "Select all" / "Clear all".
+- [x] **M10.9** Tests — 15 new: picker sort (4 criteria + unknown key), select_top_n (3 cases), estimate_duration (2), is_fetch_stale (3), pipeline preselected events (skip fetch + empty raises). Pipeline backward-compatible (no events param → fetches normally).
+- [x] **M10.10** **Update README** — documented fetch→pick→generate flow, picker columns, sort options, Quick Generate fallback.
+- [x] **Extra** `pipeline.run(events=[...])` accepts pre-selected events, skipping fetch — enables both the picker flow and programmatic curation.
+- [x] **Extra** `src/events_gen/ui/picker.py` — pure testable helpers (no Streamlit deps): sort, select, duration estimate, stale detection.
 
 **Deliverable:** an interactive picker with live preview, backed by richer ranking + new sources.
 **Acceptance:** fetch 30 candidates → use the picker to hand-select 5 → the video contains exactly those 5; the timeline preview updates live.

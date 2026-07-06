@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .content.builder import build_content
-from .models import DraftStatus, Platform, PostDraft, TimeWindow
+from .models import DraftStatus, Event, Platform, PostDraft, TimeWindow
 from .registry import get_city, load_event_types
 from .render import THEMES, get_format, render_video
 from .settings import Settings, get_settings
@@ -55,6 +55,7 @@ def run(
     smart_backgrounds: bool = False,
     smart_music: bool = True,
     auto_music: bool = False,
+    events: list[Event] | None = None,
     targets: list[Platform] | None = None,
     custom_start: datetime | None = None,
     custom_end: datetime | None = None,
@@ -77,13 +78,18 @@ def run(
     wanted = set(event_types or [])
     types = [t for t in all_types if t.slug in wanted] if wanted else []
 
-    # 1. Fetch events
-    progress(f"Discovering events in {city.name}…")
-    date_range = compute_window(window, city.timezone, start=custom_start, end=custom_end)
-    events = aggregator.fetch(city, date_range, types, count=count, settings=settings)
-    if not events:
-        raise PipelineError(f"no events found for {city.name} in the {window.value} window")
-    progress(f"Found {len(events)} event(s).")
+    # 1. Fetch events (or use pre-selected list from the interactive picker)
+    if events is not None:
+        if not events:
+            raise PipelineError("no events selected (empty list passed)")
+        progress(f"Using {len(events)} pre-selected event(s).")
+    else:
+        progress(f"Discovering events in {city.name}…")
+        date_range = compute_window(window, city.timezone, start=custom_start, end=custom_end)
+        events = aggregator.fetch(city, date_range, types, count=count, settings=settings)
+        if not events:
+            raise PipelineError(f"no events found for {city.name} in the {window.value} window")
+        progress(f"Found {len(events)} event(s).")
 
     # Create the draft up front so content/video paths are scoped to its id.
     draft = PostDraft(
