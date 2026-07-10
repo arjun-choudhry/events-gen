@@ -235,3 +235,66 @@ def load_font(
 ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     """Load the first available font from ``candidates`` at ``size`` (cached)."""
     return _cached_font(candidates, size)
+
+
+# ── System font discovery (for the post-render font picker) ──
+
+_FONT_EXTS = (".ttf", ".otf", ".ttc")
+
+
+def _can_render_latin(font_path: str) -> bool:
+    """True if the font can render basic Latin text (not just boxes/blanks)."""
+    from PIL import Image, ImageDraw
+
+    try:
+        f = ImageFont.truetype(font_path, 20)
+        img = Image.new("L", (120, 30), 0)
+        d = ImageDraw.Draw(img)
+        d.text((2, 2), "AaBb12", fill=255, font=f)
+        return any(p > 30 for p in img.getdata())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+@lru_cache(maxsize=1)
+def available_fonts() -> dict[str, str]:
+    """Map display name → absolute font-file path for every *working* font.
+
+    Scans the known font directories for ``.ttf`` / ``.otf`` / ``.ttc`` files,
+    filters out fonts that can't render Latin text (CJK-only, emoji, math symbol
+    fonts that produce boxes), and returns the rest sorted by name. The list
+    reflects *this* machine — a font chosen here won't exist on another host (the
+    renderer falls back gracefully).
+    """
+    found: dict[str, str] = {}
+    for directory in _FONT_DIRS:
+        if not directory.exists():
+            continue
+        for path in sorted(directory.rglob("*")):
+            if path.suffix.lower() in _FONT_EXTS and path.is_file():
+                name = path.stem
+                if name not in found:
+                    found[name] = str(path)
+    # Filter to only fonts that actually render Latin glyphs (not boxes).
+    working = {name: path for name, path in found.items() if _can_render_latin(path)}
+    return dict(sorted(working.items(), key=lambda kv: kv[0].lower()))
+
+
+@lru_cache(maxsize=256)
+def _cached_font_file(path: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    try:
+        return ImageFont.truetype(path, size=size)
+    except OSError:
+        try:
+            return ImageFont.load_default(size=size)
+        except TypeError:  # Pillow < 10
+            return ImageFont.load_default()
+
+
+def load_font_file(
+    path: str | None, size: int, fallback: tuple[str, ...]
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Load an explicit font ``path`` at ``size``; fall back to ``fallback`` candidates."""
+    if path and Path(path).exists():
+        return _cached_font_file(path, size)
+    return load_font(fallback, size)

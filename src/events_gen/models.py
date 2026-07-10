@@ -112,6 +112,33 @@ class Event(BaseModel):
         return f"{title}|{day}|{venue}"
 
 
+class FontStyle(BaseModel):
+    """One set of typography knobs applied to ALL text in the video + thumbnail.
+
+    Set once, at the end, after the video is rendered — a single re-render applies
+    it everywhere. ``font_path`` is an absolute path to a system font file (chosen
+    from the font picker); ``None`` uses the built-in default family. Sizes are in
+    pixels at the format's native width. Colors are hex strings (e.g. "#ffffff").
+    """
+
+    font_path: str | None = None
+    font_name: str | None = None  # display label for the chosen font (UI only)
+    title_size: int = 68
+    body_size: int = 44
+    title_color: str = "#ffffff"
+    body_color: str = "#ebebeb"
+    accent_color: str = "#b4dcb4"
+    # Vertical placement of the text block: "top" | "center" | "bottom".
+    placement: str = "center"
+    # Horizontal text alignment within the card: "left" | "center" | "right".
+    text_align: str = "left"
+    # Legibility treatment: "panel" (opaque box), "outline", or "shadow".
+    text_style: str = "shadow"
+    # Panel opacity 0–1 (only used when text_style == "panel").
+    panel_opacity: float = 0.6
+    uppercase_titles: bool = False
+
+
 class PostContent(BaseModel):
     """Generated + selected content for a post (captions, background, music)."""
 
@@ -127,6 +154,17 @@ class PostContent(BaseModel):
     # Event.id. The renderer uses these for each event's card, falling back to
     # ``background_image_path`` when an event has no entry.
     event_backgrounds: dict[str, str] = Field(default_factory=dict)
+    # Optional per-event video clips (M16), keyed by Event.id → clip path.
+    # When present, the renderer uses a VideoFileClip instead of a still image.
+    event_video_clips: dict[str, str] = Field(default_factory=dict)
+    # Per-event *requested* background source, keyed by Event.id. One of
+    # "wikimedia" | "stock" | "promo" | "upload". "promo" forces the event's
+    # Ticketmaster image (Ken-Burns animated); the others resolve to a clip path
+    # stored in ``event_video_clips``.
+    event_background_overrides: dict[str, str] = Field(default_factory=dict)
+    # Per-event *realized* source of the current clip/background (authoritative for
+    # the edit-pane radio default): "wikimedia" | "stock" | "promo" | "upload".
+    event_clip_sources: dict[str, str] = Field(default_factory=dict)
 
 
 class Destination(BaseModel):
@@ -174,10 +212,29 @@ class PostDraft(BaseModel):
     events: list[Event] = Field(default_factory=list)
     content: PostContent | None = None
     video_path: str | None = None
+    # Poster thumbnail shown before the video plays. ``thumbnail_title`` overrides
+    # the headline text (defaults to the post title when None).
+    thumbnail_path: str | None = None
+    thumbnail_title: str | None = None
+    # Thumbnail option gallery: variant-key → rendered image path, and the chosen
+    # variant key (its image == ``thumbnail_path``). Populated on demand.
+    thumbnail_options: dict[str, str] = Field(default_factory=dict)
+    thumbnail_choice: str | None = None
+    # Single typography style applied to ALL video/thumbnail text, set post-render.
+    font_style: FontStyle | None = None
+    # Target render format ("reel" / "short" / "landscape" / 4K variants). Captured
+    # when the draft is prepared so the eventual video encode uses the right size.
+    render_format: str = "reel"
     # Theme name → rendered video path, when previews are generated per theme.
     # ``theme`` is the currently-selected one (its path == ``video_path``).
     theme_previews: dict[str, str] = Field(default_factory=dict)
     theme: str | None = None
+    # Render settings captured at generation time so theme previews stay consistent.
+    intensity: float | None = None
+    animation: str | None = None
+    text_position: str = "center"
+    # How card text is made legible: "panel" (opaque scrim), "outline", or "shadow".
+    text_style: str = "panel"
     targets: list[Platform] = Field(default_factory=list)
     status: DraftStatus = DraftStatus.DRAFT
     results: list[PublishResult] = Field(default_factory=list)

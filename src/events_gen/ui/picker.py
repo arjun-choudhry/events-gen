@@ -33,8 +33,12 @@ def select_top_n(events: list[Event], n: int) -> set[str]:
 
 
 def estimate_duration(n_events: int, fmt: VideoFormat) -> float:
-    """Estimate video duration in seconds for ``n_events`` in ``fmt``."""
-    return fmt.intro_seconds + n_events * fmt.seconds_per_card + fmt.outro_seconds
+    """Estimate video duration in seconds for ``n_events`` in ``fmt``.
+
+    The video now opens straight on the first event (no title/outro cards), so the
+    duration is just one card per event.
+    """
+    return n_events * fmt.seconds_per_card
 
 
 def is_fetch_stale(

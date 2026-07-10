@@ -11,7 +11,7 @@ from PIL import Image
 from events_gen.models import Event, PostContent
 from events_gen.render import LANDSCAPE, REEL, get_format, render_video
 from events_gen.render.cards import render_card
-from events_gen.render.formats import FORMATS, VideoFormat
+from events_gen.render.formats import FORMATS
 
 # ── Fixtures ──
 
@@ -137,6 +137,19 @@ class TestRenderVideo:
         render_video(_content(), events, out, REEL)
         assert out.exists()
 
+    def test_font_style_override(self, tmp_path: Path) -> None:
+        # A single FontStyle applies to all cards (custom font/colors/placement).
+        from events_gen.models import FontStyle
+
+        fs = FontStyle(
+            title_size=90, title_color="#ff3366", body_color="#ffffff",
+            placement="bottom", text_style="shadow", uppercase_titles=True,
+        )
+        out = tmp_path / "styled.mp4"
+        render_video(_content(), [_event("E1"), _event("E2")], out, REEL, font_style=fs)
+        assert out.exists()
+        assert out.stat().st_size > 0
+
     def test_with_background_image(self, tmp_path: Path) -> None:
         bg = tmp_path / "bg.jpg"
         Image.new("RGB", (500, 500), (100, 50, 200)).save(bg)
@@ -188,21 +201,74 @@ class TestRenderVideo:
 
 
 class TestPacing:
-    def test_duration_scales_with_events(self) -> None:
-        fmt = REEL
-        n = 5
-        expected = fmt.intro_seconds + n * fmt.seconds_per_card + fmt.outro_seconds
-        assert expected == 24.0
+    def test_video_has_no_intro_or_outro(self, tmp_path: Path) -> None:
+        # The video now opens straight on the first event: duration == n * card
+        # (no title-intro / outro cards). Verify via the rendered file's duration.
+        import subprocess
 
-    def test_custom_format_pacing(self) -> None:
-        custom = VideoFormat(
-            name="fast",
-            width=720,
-            height=1280,
-            seconds_per_card=2.0,
-            intro_seconds=1.0,
-            outro_seconds=1.0,
+        n = 2
+        out = tmp_path / "v.mp4"
+        render_video(_content(), [_event(), _event("Second")], out, REEL, animation="none")
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(out)],
+            capture_output=True, text=True, check=True,
         )
-        n = 3
-        expected = custom.intro_seconds + n * custom.seconds_per_card + custom.outro_seconds
-        assert expected == 8.0
+        assert abs(float(probe.stdout.strip()) - n * REEL.seconds_per_card) < 0.5
+
+
+# ── Text position (M: placement) ──
+
+
+class TestTextPosition:
+    def test_vertical_anchor_top(self) -> None:
+        from events_gen.render.video import _vertical_anchor
+
+        y = _vertical_anchor(REEL, 400, "top")
+        assert y == int(REEL.height * 0.08)
+
+    def test_vertical_anchor_bottom(self) -> None:
+        from events_gen.render.video import _vertical_anchor
+
+        y = _vertical_anchor(REEL, 400, "bottom")
+        assert y == REEL.height - 400 - int(REEL.height * 0.08)
+
+    def test_vertical_anchor_center(self) -> None:
+        from events_gen.render.video import _vertical_anchor
+
+        y = _vertical_anchor(REEL, 400, "center")
+        assert y == (REEL.height - 400) // 2
+
+    def test_render_with_positions(self, tmp_path: Path) -> None:
+        for pos in ("top", "center", "bottom"):
+            out = tmp_path / f"{pos}.mp4"
+            render_video(_content(), [_event()], out, REEL, text_position=pos)
+            assert out.exists()
+
+
+class TestTextStyle:
+    def test_render_with_each_style(self, tmp_path: Path) -> None:
+        for style in ("panel", "outline", "shadow"):
+            out = tmp_path / f"{style}.mp4"
+            render_video(_content(), [_event()], out, REEL, text_style=style)
+            assert out.exists()
+
+    def test_panel_style_draws_opaque_scrim(self) -> None:
+        # The "panel" style paints an opaque rounded box, so the card has many
+        # fully/near-opaque pixels; outline/shadow leave the card mostly transparent.
+        panel = render_card(_event(), REEL, index=1, total=1, text_style="panel")
+        outline = render_card(_event(), REEL, index=1, total=1, text_style="outline")
+        panel_alpha = panel.split()[3]
+        outline_alpha = outline.split()[3]
+        # The panel scrim fills the whole card with a semi-opaque box; outline only
+        # has opaque text/stroke pixels, so far fewer non-transparent pixels.
+        panel_filled = sum(1 for a in panel_alpha.getdata() if a > 100)
+        outline_filled = sum(1 for a in outline_alpha.getdata() if a > 100)
+        assert panel_filled > outline_filled * 3
+
+    def test_outline_style_has_transparent_background(self) -> None:
+        # Without a panel, the vast majority of the card is transparent.
+        card = render_card(_event(), REEL, index=1, total=1, text_style="outline")
+        alpha = card.split()[3]
+        transparent = sum(1 for a in alpha.getdata() if a == 0)
+        assert transparent > (card.width * card.height) * 0.5

@@ -15,6 +15,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
+
 from ..models import City, Event, EventType
 from ..settings import Settings, get_settings
 from ..timewindow import DateRange
@@ -45,6 +47,31 @@ class EventbriteSource(ApiEventSource):
 
     def is_configured(self) -> bool:
         return bool(self._settings.eventbrite_api_token)
+
+    def fetch(
+        self,
+        city: City,
+        window: DateRange,
+        event_types: list[EventType],
+    ) -> list[Event]:
+        """Fetch events, quietly returning [] if public search is unavailable.
+
+        Eventbrite retired its public event-search API; the ``destination/search``
+        endpoint returns 405 for all tokens (search is now org-scoped only). We
+        catch that specific case and degrade to no events without a noisy trace.
+        """
+        try:
+            return super().fetch(city, window, event_types)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (403, 404, 405):
+                logger.info(
+                    "eventbrite public search unavailable (HTTP %d); returning no events. "
+                    "Eventbrite retired public event discovery — this source only works "
+                    "for org-owned events.",
+                    exc.response.status_code,
+                )
+                return []
+            raise
 
     def build_params(
         self,

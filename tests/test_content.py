@@ -70,6 +70,33 @@ def test_template_captions_are_deterministic(settings: Settings) -> None:
     assert a == b
 
 
+def _event_with_url(title: str, url: str) -> Event:
+    return Event(
+        source="mock",
+        title=title,
+        start=datetime(2026, 7, 8, 20, 0, tzinfo=UTC),
+        city_slug="tokyo",
+        url=url,  # type: ignore[arg-type]
+    )
+
+
+def test_caption_includes_event_links(settings: Settings) -> None:
+    events = [
+        _event_with_url("Jazz Night", "https://tix.example/jazz"),
+        _event_with_url("Rock Show", "https://tix.example/rock"),
+    ]
+    result = generate_captions(CITY, events, "week", settings=settings)
+    assert "Tickets & info" in result.caption
+    assert "https://tix.example/jazz" in result.caption
+    assert "https://tix.example/rock" in result.caption
+
+
+def test_caption_no_links_block_when_no_urls(settings: Settings) -> None:
+    events = [_event("No URL Show", "music")]  # no url on the event
+    result = generate_captions(CITY, events, "week", settings=settings)
+    assert "Tickets & info" not in result.caption
+
+
 # ── caption provider selection ──
 
 
@@ -123,6 +150,18 @@ def test_gemini_failure_falls_back_to_template(monkeypatch: pytest.MonkeyPatch) 
     s = _settings_with(GEMINI_API_KEY="g")
     result = generate_captions(CITY, [_event("Big Show", "music")], "week", settings=s)
     assert "Big Show" in result.caption  # template output
+
+
+def test_use_llm_false_skips_api_even_with_key() -> None:
+    # Even with a key configured, use_llm=False should return template directly.
+    s = _settings_with(GEMINI_API_KEY="real-key-here")
+    result = generate_captions(
+        CITY, [_event("Concert", "music")], "week", use_llm=False, settings=s
+    )
+    # Template captions always contain the event title literally.
+    assert "Concert" in result.caption
+    # And have the formulaic "things to do" title.
+    assert "things to do" in result.title.lower()
 
 
 # ── image providers ──

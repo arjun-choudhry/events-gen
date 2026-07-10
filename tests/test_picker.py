@@ -75,12 +75,13 @@ class TestSelectTopN:
 
 class TestEstimateDuration:
     def test_matches_format_math(self) -> None:
+        # No intro/outro cards anymore — duration is just one card per event.
         d = estimate_duration(5, REEL)
-        assert d == REEL.intro_seconds + 5 * REEL.seconds_per_card + REEL.outro_seconds
+        assert d == 5 * REEL.seconds_per_card
 
     def test_zero_events(self) -> None:
         d = estimate_duration(0, REEL)
-        assert d == REEL.intro_seconds + REEL.outro_seconds
+        assert d == 0.0
 
 
 class TestFetchStale:

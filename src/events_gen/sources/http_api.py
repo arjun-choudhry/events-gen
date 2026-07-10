@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 from tenacity import (
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -27,8 +27,15 @@ from .cache import ResponseCache
 
 logger = logging.getLogger(__name__)
 
-# Retry only on transient network/5xx conditions, not on 4xx (bad key/params).
-_RETRYABLE = (httpx.TransportError, httpx.HTTPStatusError)
+
+def _is_transient(exc: BaseException) -> bool:
+    """Retry transport errors and 5xx/429 — never other 4xx (bad key/params/endpoint)."""
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        return code == 429 or 500 <= code < 600
+    return False
 
 
 class ApiEventSource(EventSource):
@@ -98,7 +105,7 @@ class ApiEventSource(EventSource):
         return payload
 
     @retry(
-        retry=retry_if_exception_type(_RETRYABLE),
+        retry=retry_if_exception(_is_transient),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=0.5, max=8),
         reraise=True,

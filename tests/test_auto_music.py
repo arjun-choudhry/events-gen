@@ -51,7 +51,7 @@ def test_returns_none_without_client_id(tmp_path: Path) -> None:
     assert fetch_track(tmp_path, settings=s) is None
 
 
-def test_fetches_top_track(tmp_path: Path) -> None:
+def test_fetches_a_track(tmp_path: Path) -> None:
     s = _settings(tmp_path, JAMENDO_CLIENT_ID="cid")
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -62,7 +62,8 @@ def test_fetches_top_track(tmp_path: Path) -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     track = fetch_track(tmp_path, client=client, settings=s)
     assert track is not None
-    assert track.track_id == "111"  # top-ranked
+    # Pick is randomized among the fresh candidates for variety.
+    assert track.track_id in {"111", "222"}
     assert track.path.exists()
 
 
@@ -75,8 +76,10 @@ def test_excludes_recent_tracks(tmp_path: Path) -> None:
         return httpx.Response(200, content=b"ID3fake-mp3")
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    # 111 and 222 used recently → should pick 333.
-    track = fetch_track(tmp_path, exclude_ids=["111", "222"], client=client, settings=s)
+    # 111 and 222 used recently (stored in prefixed form) → should pick 333.
+    track = fetch_track(
+        tmp_path, exclude_ids=["jamendo:111", "jamendo:222"], client=client, settings=s
+    )
     assert track is not None
     assert track.track_id == "333"
 
@@ -88,7 +91,7 @@ def test_none_when_all_excluded(tmp_path: Path) -> None:
         return httpx.Response(200, json=_tracks_response("111"))
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    assert fetch_track(tmp_path, exclude_ids=["111"], client=client, settings=s) is None
+    assert fetch_track(tmp_path, exclude_ids=["jamendo:111"], client=client, settings=s) is None
 
 
 def test_api_failure_degrades_to_none(tmp_path: Path) -> None:

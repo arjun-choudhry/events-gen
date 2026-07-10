@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     # Used for per-event venue/place backgrounds ("smart backgrounds").
     unsplash_access_key: str | None = Field(default=None, alias="UNSPLASH_ACCESS_KEY")
 
+    # ── Video clips (per-event stock video backgrounds) ──
+    pexels_api_key: str | None = Field(default=None, alias="PEXELS_API_KEY")
+    pixabay_api_key: str | None = Field(default=None, alias="PIXABAY_API_KEY")
+    # Coverr — free API key from https://coverr.co/ (optional extra clip source).
+    coverr_api_key: str | None = Field(default=None, alias="COVERR_API_KEY")
+
     # ── Render quality ──
     render_crf: int = Field(default=18, alias="EG_RENDER_CRF")
 

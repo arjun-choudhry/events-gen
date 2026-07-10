@@ -20,6 +20,26 @@ logger = logging.getLogger(__name__)
 
 _TM_DATE_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
+# Map Ticketmaster classification "segment" names to our event-type slugs.
+_SEGMENT_TO_SLUG: dict[str, str] = {
+    "music": "music",
+    "sports": "sports",
+    "arts & theatre": "arts",
+    "arts & theater": "arts",
+    "film": "arts",
+    "miscellaneous": "family",
+}
+
+
+def _classify(item: dict[str, Any]) -> str | None:
+    """Extract an event-type slug from a Ticketmaster classification segment."""
+    classifications = item.get("classifications")
+    if not classifications:
+        return None
+    segment = classifications[0].get("segment", {})
+    name = (segment.get("name") or "").strip().lower()
+    return _SEGMENT_TO_SLUG.get(name)
+
 
 class TicketmasterSource(ApiEventSource):
     name = "ticketmaster"
@@ -118,10 +138,20 @@ class TicketmasterSource(ApiEventSource):
         if images:
             image_url = images[0].get("url")
 
+        # Extract popularity signal: attractions[0].upcomingEvents._total
+        rank_score = 0.0
+        attractions = embedded.get("attractions") if isinstance(embedded, dict) else None
+        if attractions and isinstance(attractions, list):
+            upcoming = attractions[0].get("upcomingEvents", {})
+            if isinstance(upcoming, dict):
+                total = int(upcoming.get("_total", 0) or 0)
+                rank_score = min(total / 100.0, 10.0)
+
         return Event(
             source=self.name,
             source_event_id=item.get("id"),
             title=item.get("name", "Untitled event"),
+            event_type=_classify(item),
             start=start,  # pydantic parses ISO-8601 into datetime
             end=None,
             venue=venue,
@@ -131,4 +161,5 @@ class TicketmasterSource(ApiEventSource):
             price_min=price_min,
             price_max=price_max,
             currency=currency,
+            rank_score=rank_score,
         )

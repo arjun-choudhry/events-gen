@@ -134,24 +134,62 @@ def _anthropic_captions(
     return result
 
 
+def _event_links_block(events: list[Event]) -> str:
+    """A deterministic, clickable "tickets & info" list of real event URLs.
+
+    Appended to every caption so users can tap through to each event's page. Built
+    from the events' actual ``url`` (never LLM-generated, so links are always real)
+    and only included for events that have a URL.
+    """
+    linked = [e for e in events if e.url]
+    if not linked:
+        return ""
+    lines = ["", "🎟️ Tickets & info:"]
+    for e in linked:
+        lines.append(f"• {e.title}: {e.url}")
+    return "\n".join(lines)
+
+
+def _with_links(result: CaptionResult, events: list[Event]) -> CaptionResult:
+    """Return ``result`` with a real event-links block appended to its caption."""
+    block = _event_links_block(events)
+    if not block:
+        return result
+    return result.model_copy(update={"caption": f"{result.caption}\n{block}"})
+
+
 def generate_captions(
     city: City,
     events: list[Event],
     window: str,
     *,
+    use_llm: bool = True,
     settings: Settings | None = None,
 ) -> CaptionResult:
-    """Generate captions for ``events``; falls back to a template with no API key."""
-    settings = settings or get_settings()
-    provider = _select_provider(settings)
-    if provider == "template":
-        logger.info("no caption LLM key configured; using template captions")
-        return _template_captions(city, events, window)
+    """Generate captions for ``events``; falls back to a template with no API key.
 
-    try:
-        if provider == "gemini":
-            return _gemini_captions(city, events, window, settings)
-        return _anthropic_captions(city, events, window, settings)
-    except Exception:  # noqa: BLE001 - degrade to template on any LLM failure
-        logger.exception("caption generation via %s failed; using template fallback", provider)
-        return _template_captions(city, events, window)
+    When ``use_llm`` is False, always uses the template regardless of keys. A
+    clickable list of the events' real URLs is always appended so viewers can tap
+    through to each event's page.
+    """
+    settings = settings or get_settings()
+
+    def _generate() -> CaptionResult:
+        if not use_llm:
+            logger.info("LLM disabled by toggle; using template captions")
+            return _template_captions(city, events, window)
+        provider = _select_provider(settings)
+        if provider == "template":
+            logger.info("no caption LLM key configured; using template captions")
+            return _template_captions(city, events, window)
+        try:
+            if provider == "gemini":
+                return _gemini_captions(city, events, window, settings)
+            return _anthropic_captions(city, events, window, settings)
+        except Exception:  # noqa: BLE001 - degrade to template on any LLM failure
+            logger.exception(
+                "caption generation via %s failed; using template fallback", provider
+            )
+            return _template_captions(city, events, window)
+
+    return _with_links(_generate(), events)

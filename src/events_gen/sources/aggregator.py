@@ -25,6 +25,8 @@ from .base import EventSource
 from .cache import ResponseCache
 from .eventbrite import EventbriteSource
 from .mock import MockSource
+from .predicthq import PredictHQSource
+from .seatgeek import SeatGeekSource
 from .ticketmaster import TicketmasterSource
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,8 @@ def default_sources(settings: Settings | None = None) -> list[EventSource]:
     real: list[EventSource] = [
         TicketmasterSource(settings=settings, cache=cache),
         EventbriteSource(settings=settings, cache=cache),
+        SeatGeekSource(settings=settings, cache=cache),
+        PredictHQSource(settings=settings, cache=cache),
     ]
     configured = [s for s in real if s.is_configured()]
     if configured:
@@ -50,46 +54,49 @@ def default_sources(settings: Settings | None = None) -> list[EventSource]:
 
 
 def _rank(event: Event, window: DateRange) -> float:
-    """Score an event by **popularity**. Higher is better.
+    """Score an event on a **0–100 scale**. Higher is better.
 
-    Event APIs don't expose a raw popularity number, so we approximate it from
-    the signals they do provide — bigger/more-promoted events tend to have a
-    promo image, ticket pricing, and complete metadata:
+    Fixed 70/30 split:
+      - Source component (0–70): the source-provided ``rank_score`` (SeatGeek
+        demand, PredictHQ predicted attendance, Ticketmaster fame). This is the
+        authoritative popularity signal and accounts for exactly 70% of the max.
+      - Metadata component (0–30): image, price, completeness, and imminence.
+        These are proxies — they matter most for events that LACK a source score
+        (rank_score == 0), where they provide the only differentiation.
 
-      - promo image present (promoted events have artwork)   → strong signal
-      - ticket price (higher max price ~ bigger event)        → scaled, capped
-      - venue / description / url present (completeness)      → small bonuses
-      - source-provided ``rank_score`` (e.g. mock/relevance)  → added directly
-      - imminence is only a minor tiebreaker, not a driver
-
-    Scores are not normalized to any range; they're only used for relative
-    ordering within a single fetch.
+    Events without a source score (rank_score == 0) compete on metadata alone
+    (up to 30 points). They'll always rank below a source-scored event with even
+    a modest signal (e.g. SeatGeek 0.3 → 21 points from source alone).
     """
-    score = 0.0
-    if event.image_url:
-        score += 3.0
-    if event.venue:
-        score += 1.0
-    if event.description:
-        score += 1.0
-    if event.url:
-        score += 0.5
+    # Source component: rank_score is 0–10; scale to 0–70.
+    source = event.rank_score * 7.0
 
-    # Ticket price as a popularity proxy: pricier headline events rank higher,
-    # capped so a single expensive ticket can't dominate.
+    # Metadata component: raw signals (up to ~11.5), then scaled to 0–30.
+    _META_MAX = 11.5  # theoretical max of all metadata signals below
+    meta_raw = 0.0
+    if event.image_url:
+        meta_raw += 3.0
+    if event.venue:
+        meta_raw += 1.0
+    if event.description:
+        meta_raw += 1.0
+    if event.url:
+        meta_raw += 0.5
+
     price = event.price_max if event.price_max is not None else event.price_min
     if price is not None:
-        score += min(price / 50.0, 5.0)
+        meta_raw += min(price / 50.0, 5.0)
 
-    score += event.rank_score
-
-    # Imminence: small tiebreaker so, among equally-popular events, sooner wins.
+    # Imminence: sooner events get a small edge within the metadata bucket.
     span = max((window.end - window.start).total_seconds(), 1.0)
     time_to_event = max((event.start - window.start).total_seconds(), 0.0)
-    recency = 1.0 - min(time_to_event / span, 1.0)  # 1.0 = imminent, 0.0 = window end
-    score += recency  # weight 1.0 (was 10.0 — no longer the primary driver)
+    recency = 1.0 - min(time_to_event / span, 1.0)
+    meta_raw += recency  # up to 1.0
 
-    return score
+    # Normalize metadata to exactly 0–30.
+    meta = (meta_raw / _META_MAX) * 30.0
+
+    return source + meta
 
 
 def dedupe(events: list[Event]) -> list[Event]:
@@ -161,6 +168,52 @@ def fetch(
         len(top),
     )
     return top
+
+
+def fetch_by_source(
+    city: City,
+    window: DateRange,
+    event_types: list[EventType],
+    count: int,
+    *,
+    sources: list[EventSource] | None = None,
+    settings: Settings | None = None,
+) -> dict[str, list[Event]]:
+    """Fetch events grouped by source name, plus a merged "All" list.
+
+    Returns a dict keyed by source name (e.g. "ticketmaster", "seatgeek") with
+    each source's raw events (in-window only), plus an "All" key containing the
+    deduped+ranked merged result (same as :func:`fetch`).
+    """
+    sources = sources if sources is not None else default_sources(settings)
+
+    by_source: dict[str, list[Event]] = {}
+    collected: list[Event] = []
+    for source in sources:
+        events = source.safe_fetch(city, window, event_types)
+        in_window = [e for e in events if window.contains(e.start)]
+        if in_window:
+            by_source[source.name] = in_window
+        collected.extend(in_window)
+
+    # Build the merged "All" list using the same logic as fetch().
+    deduped = dedupe(collected)
+    deduped.sort(key=lambda e: _rank(e, window), reverse=True)
+    top: list[Event] = []
+    seen: set[str] = set()
+    limit = max(count, 0)
+    for event in deduped:
+        if len(top) >= limit:
+            break
+        key = _uniqueness_key(event)
+        if key in seen:
+            continue
+        seen.add(key)
+        event.rank_score = _rank(event, window)
+        top.append(event)
+
+    by_source["All"] = top
+    return by_source
 
 
 def _uniqueness_key(event: Event) -> str:
